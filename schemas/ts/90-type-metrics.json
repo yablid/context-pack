@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.context-pack.dev/ts/90-type-metrics.json",
+  "title": "TypeScript Type Quality Metrics",
+  "description": "Analysis of TypeScript usage patterns and type quality metrics",
+  "type": "object",
+  "properties": {
+    "packages": {
+      "type": "array",
+      "description": "Type metrics per package",
+      "items": {
+        "type": "object",
+        "properties": {
+          "packageName": {
+            "type": "string",
+            "description": "Package name or 'root'"
+          },
+          "dir": {
+            "type": "string",
+            "description": "POSIX-style relative directory path"
+          },
+          "files": {
+            "type": "array",
+            "description": "Metrics per source file",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "description": "POSIX-style relative file path"
+                },
+                "metrics": {
+                  "$ref": "#/$defs/typeMetrics"
+                }
+              },
+              "required": ["file", "metrics"],
+              "additionalProperties": false
+            }
+          },
+          "aggregated": {
+            "$ref": "#/$defs/typeMetrics"
+          },
+          "quality": {
+            "$ref": "#/$defs/qualityMetrics"
+          }
+        },
+        "required": ["packageName", "dir", "files", "aggregated", "quality"],
+        "additionalProperties": false
+      }
+    },
+    "global": {
+      "type": "object",
+      "description": "Global aggregated metrics",
+      "properties": {
+        "totals": {
+          "$ref": "#/$defs/typeMetrics"
+        },
+        "quality": {
+          "$ref": "#/$defs/qualityMetrics"
+        },
+        "verbatimModuleSyntaxUsage": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "total": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "ratio": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": ["enabled", "total", "ratio"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["totals", "quality", "verbatimModuleSyntaxUsage"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["packages", "global"],
+  "additionalProperties": false,
+  "$defs": {
+    "typeMetrics": {
+      "type": "object",
+      "properties": {
+        "anyCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknownCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "neverCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "satisfiesCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "asConstCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalNodes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "typeAnnotations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "assertions": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": ["anyCount", "unknownCount", "neverCount", "satisfiesCount", "asConstCount", "totalNodes", "typeAnnotations", "assertions"],
+      "additionalProperties": false
+    },
+    "qualityMetrics": {
+      "type": "object",
+      "properties": {
+        "anyRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "typeAnnotationRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "unknownRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": ["anyRatio", "typeAnnotationRatio", "unknownRatio"],
+      "additionalProperties": false
+    }
+  }
+}

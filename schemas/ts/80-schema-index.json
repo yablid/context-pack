@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.context-pack.dev/ts/80-schema-index.json",
+  "title": "Schema and Validation Index",
+  "description": "Index of schema and validation files with exported identifiers",
+  "type": "object",
+  "properties": {
+    "files": {
+      "type": "array",
+      "description": "Schema files found in the codebase",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "POSIX-style relative path from project root"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["schema", "zod", "yup", "contract", "validator", "other"],
+            "description": "Detected schema file type"
+          },
+          "exports": {
+            "type": "array",
+            "description": "Exported identifier names (no code content)",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["file", "type", "exports"],
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "Summary statistics",
+      "properties": {
+        "totalFiles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalExports": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "byType": {
+          "type": "object",
+          "description": "File counts by detected type",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "commonPatterns": {
+          "type": "array",
+          "description": "Most common export names across files",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["totalFiles", "totalExports", "byType", "commonPatterns"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["files", "summary"],
+  "additionalProperties": false
+}

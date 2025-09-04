@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.context-pack.dev/ts/60-exports.json",
+  "title": "TypeScript Exports Catalog",
+  "description": "Catalog of exported symbols from TypeScript source files",
+  "type": "object",
+  "properties": {
+    "files": {
+      "type": "array",
+      "description": "Exports per source file",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "POSIX-style relative path from project root"
+          },
+          "exports": {
+            "type": "array",
+            "description": "Exported symbols from this file",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Name of the exported symbol"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["function", "class", "type", "interface", "enum", "var", "const", "default", "namespace"],
+                  "description": "Type of the exported symbol"
+                },
+                "isReexport": {
+                  "type": "boolean",
+                  "description": "Whether this is a re-export from another module"
+                },
+                "reexportFrom": {
+                  "type": "string",
+                  "description": "Module this symbol is re-exported from (if applicable)"
+                }
+              },
+              "required": ["name", "kind", "isReexport"],
+              "additionalProperties": false
+            }
+          },
+          "hasDefaultExport": {
+            "type": "boolean",
+            "description": "Whether this file has a default export"
+          }
+        },
+        "required": ["file", "exports", "hasDefaultExport"],
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "Summary statistics",
+      "properties": {
+        "totalFiles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalExports": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reexports": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "defaultExports": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "byKind": {
+          "type": "object",
+          "description": "Export counts by kind",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": ["totalFiles", "totalExports", "reexports", "defaultExports", "byKind"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["files", "summary"],
+  "additionalProperties": false
+}

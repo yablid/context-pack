@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://context-pack.dev/schemas/10-repo-topology.json",
+  "title": "Repository Topology",
+  "type": "object",
+  "required": ["workspaces", "packages"],
+  "properties": {
+    "workspaces": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Workspace glob patterns"
+    },
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "dir", "dependencies"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Package name"
+          },
+          "dir": {
+            "type": "string",
+            "description": "Relative directory path (POSIX style)"
+          },
+          "private": {
+            "type": "boolean",
+            "description": "Is this a private package"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["module", "commonjs"],
+            "description": "Package module type"
+          },
+          "bin": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            ],
+            "description": "Binary executables"
+          },
+          "exportsKeys": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Keys from package.json exports field"
+          },
+          "main": {
+            "type": "string",
+            "description": "Main entry point"
+          },
+          "module": {
+            "type": "string",
+            "description": "ESM entry point"
+          },
+          "dependencies": {
+            "type": "object",
+            "required": ["internal", "external"],
+            "properties": {
+              "internal": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Dependencies on workspace packages"
+              },
+              "external": {
+                "type": "array", 
+                "items": { "type": "string" },
+                "description": "External npm dependencies"
+              }
+            }
+          }
+        }
+      }
+    },
+    "lockfile": {
+      "type": "object",
+      "required": ["type", "present"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["pnpm", "yarn", "npm"]
+        },
+        "present": {
+          "type": "boolean"
+        }
+      },
+      "description": "Lockfile information"
+    }
+  }
+}

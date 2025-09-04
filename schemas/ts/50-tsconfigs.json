@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.context-pack.dev/ts/50-tsconfigs.json",
+  "title": "TypeScript Configuration Analysis",
+  "description": "Analysis of TypeScript configuration files across packages",
+  "type": "object",
+  "properties": {
+    "configs": {
+      "type": "array",
+      "description": "TypeScript configurations per package",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Package name or 'root'"
+          },
+          "dir": {
+            "type": "string",
+            "description": "POSIX-style relative directory path"
+          },
+          "configFile": {
+            "type": "string",
+            "description": "Relative path to the tsconfig file"
+          },
+          "resolved": {
+            "type": "object",
+            "description": "Resolved configuration after extends chain",
+            "properties": {
+              "compilerOptions": {
+                "type": "object",
+                "description": "Compiler options object"
+              },
+              "include": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "exclude": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "extends": {
+                "type": "string"
+              },
+              "files": {
+                "type": "array",
+                "items": { "type": "string" }
+              }
+            },
+            "required": ["compilerOptions"],
+            "additionalProperties": false
+          },
+          "delta": {
+            "type": "object",
+            "description": "Key compiler options extracted for analysis",
+            "properties": {
+              "strict": { "type": ["boolean", "null"] },
+              "target": { "type": ["string", "null"] },
+              "module": { "type": ["string", "null"] },
+              "moduleResolution": { "type": ["string", "null"] },
+              "verbatimModuleSyntax": { "type": ["boolean", "null"] },
+              "declaration": { "type": ["boolean", "null"] },
+              "declarationMap": { "type": ["boolean", "null"] },
+              "sourceMap": { "type": ["boolean", "null"] },
+              "esModuleInterop": { "type": ["boolean", "null"] },
+              "allowSyntheticDefaultImports": { "type": ["boolean", "null"] },
+              "noUncheckedIndexedAccess": { "type": ["boolean", "null"] },
+              "exactOptionalPropertyTypes": { "type": ["boolean", "null"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "dir", "configFile", "resolved", "delta"],
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "Summary statistics across all configs",
+      "properties": {
+        "totalConfigs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "strictCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "esmCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "declarationCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "targetDistribution": {
+          "type": "object",
+          "description": "Distribution of compilation targets",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "moduleDistribution": {
+          "type": "object",
+          "description": "Distribution of module formats",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": ["totalConfigs", "strictCount", "esmCount", "declarationCount", "targetDistribution", "moduleDistribution"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["configs", "summary"],
+  "additionalProperties": false
+}

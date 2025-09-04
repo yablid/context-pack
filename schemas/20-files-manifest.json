@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://context-pack.dev/schemas/20-files-manifest.json",
+  "title": "Files Manifest (NDJSON format)",
+  "description": "Each line is a FileInfo object",
+  "type": "object",
+  "required": ["path", "bytes", "sha256", "loc", "kind", "bucket"],
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "POSIX-style relative path from repository root"
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "File size in bytes"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hash of file contents"
+    },
+    "loc": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Lines of code (0 for binary files)"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["code", "config", "test", "asset", "docs"],
+      "description": "File classification"
+    },
+    "bucket": {
+      "type": "string",
+      "enum": ["public", "internal", "unknown"],
+      "description": "Access classification"
+    },
+    "ignoreReason": {
+      "type": "string",
+      "description": "Why this file was ignored (if applicable)"
+    }
+  }
+}

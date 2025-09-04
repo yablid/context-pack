@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.context-pack.dev/30-import-graph.json",
+  "title": "Import Graph",
+  "description": "Static import/export dependency graph for TypeScript projects",
+  "type": "object",
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "description": "Files in the dependency graph",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "POSIX-style relative path from project root"
+          },
+          "dependencies": {
+            "type": "array",
+            "description": "Internal file dependencies",
+            "items": {
+              "type": "string"
+            }
+          },
+          "externalDependencies": {
+            "type": "array",
+            "description": "External package dependencies",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["file", "dependencies", "externalDependencies"],
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Dependency relationships",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Source file path"
+          },
+          "to": {
+            "type": "string",
+            "description": "Target file or package"
+          },
+          "isExternal": {
+            "type": "boolean",
+            "description": "Whether this is an external package dependency"
+          }
+        },
+        "required": ["from", "to", "isExternal"],
+        "additionalProperties": false
+      }
+    },
+    "packageExternalDeps": {
+      "type": "object",
+      "description": "External dependencies aggregated by package",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "description": "Graph statistics",
+      "properties": {
+        "totalFiles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalEdges": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "externalEdges": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "circularDependencies": {
+          "type": "array",
+          "description": "Circular dependency cycles found",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": ["totalFiles", "totalEdges", "externalEdges", "circularDependencies"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["nodes", "edges", "packageExternalDeps", "stats"],
+  "additionalProperties": false
+}

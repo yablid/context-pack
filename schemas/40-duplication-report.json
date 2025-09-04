@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://schemas.context-pack.dev/40-duplication-report.json",
+  "title": "Code Duplication Analysis",
+  "description": "Analysis of code similarity and duplication across the codebase",
+  "type": "object",
+  "properties": {
+    "clusters": {
+      "type": "array",
+      "description": "Groups of similar files",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique cluster identifier"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 2,
+            "description": "Number of files in this cluster"
+          },
+          "totalBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total size of all files in cluster"
+          },
+          "representativeFile": {
+            "type": "string",
+            "description": "POSIX-style path to representative file"
+          },
+          "similarFiles": {
+            "type": "array",
+            "description": "Other files in this similarity cluster",
+            "items": {
+              "type": "string"
+            }
+          },
+          "similarity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Average similarity within cluster (0-1)"
+          }
+        },
+        "required": ["id", "size", "totalBytes", "representativeFile", "similarFiles", "similarity"],
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "Summary statistics",
+      "properties": {
+        "totalFiles": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total files analyzed"
+        },
+        "duplicatedFiles": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Files that are part of similarity clusters"
+        },
+        "duplicatedBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total bytes in duplicated files"
+        },
+        "largestClusterSize": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Size of the largest similarity cluster"
+        },
+        "compressionRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Ratio of duplicated bytes to total bytes"
+        }
+      },
+      "required": ["totalFiles", "duplicatedFiles", "duplicatedBytes", "largestClusterSize", "compressionRatio"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["clusters", "summary"],
+  "additionalProperties": false
+}

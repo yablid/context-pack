@@ -1,0 +1,50 @@
+{
+  "name": "context-pack",
+  "version": "0.1.0",
+  "description": "Deterministic CLI for creating language-aware context packs of codebases",
+  "type": "module",
+  "bin": {
+    "context-pack": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "rebuild": "pnpm run clean && pnpm run build",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "prepublishOnly": "pnpm run rebuild"
+  },
+  "keywords": [
+    "cli",
+    "codebase",
+    "analysis",
+    "context",
+    "typescript",
+    "monorepo"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "typescript": "^5.3.3",
+    "vitest": "^3.2.4",
+    "zod": "^4.1.5",
+    "picomatch": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.11.0",
+    "@types/picomatch": "^2.3.3",
+    "js-yaml": "^4.1.0"
+  },
+  "files": [
+    "dist",
+    "schemas"
+  ]
+}

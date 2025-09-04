@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://context-pack.dev/schemas/00-pack.json",
+  "title": "Context Pack Metadata",
+  "type": "object",
+  "required": ["specVersion", "generator", "createdAt", "preset", "riskProfile", "level", "budgets"],
+  "properties": {
+    "specVersion": {
+      "type": "string",
+      "description": "Context pack specification version"
+    },
+    "generator": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" }
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp when pack was created"
+    },
+    "preset": {
+      "type": "string",
+      "description": "Preset configuration used"
+    },
+    "riskProfile": {
+      "type": "string",
+      "enum": ["safe", "normal", "extended"],
+      "description": "Risk profile for content inclusion"
+    },
+    "level": {
+      "type": "string", 
+      "enum": ["summary", "contracts", "full-api", "deep"],
+      "description": "Detail level of the pack"
+    },
+    "budgets": {
+      "type": "object",
+      "required": ["targetBytes", "actualBytes"],
+      "properties": {
+        "targetBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Target size budget in bytes"
+        },
+        "actualBytes": {
+          "type": "integer", 
+          "minimum": 0,
+          "description": "Actual size of the pack"
+        }
+      }
+    },
+    "git": {
+      "type": "object",
+      "properties": {
+        "commit": { "type": "string" },
+        "branch": { "type": "string" },
+        "isDirty": { "type": "boolean" }
+      }
+    },
+    "downsampling": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["artifactId", "reason", "originalCount", "finalCount", "strategy"],
+        "properties": {
+          "artifactId": { "type": "string" },
+          "reason": { "type": "string" },
+          "originalCount": { "type": "integer", "minimum": 0 },
+          "finalCount": { "type": "integer", "minimum": 0 },
+          "strategy": { "type": "string" }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "description": "Additional metadata from collectors"
+    }
+  }
+}
