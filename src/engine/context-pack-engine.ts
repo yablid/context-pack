@@ -12,6 +12,7 @@ import { CollectorRunner } from './collector-runner.js';
 import { ErrorFormatter, createFormatterFromResults } from '../errors/error-formatter.js';
 import { validateInputPath, validateOutputPath } from '../utils/path-validator.js';
 import { wrapError } from '../errors/index.js';
+import { TokenCounter } from '../utils/token-counter.js';
 
 export class ContextPackEngine {
   private rootPath: string;
@@ -236,8 +237,13 @@ export class ContextPackEngine {
 
       const elapsedTime = Math.round((Date.now() - startTime) / 1000);
       
+      // Calculate token estimate for AI context usage
+      const tokenEstimate = TokenCounter.countArtifacts(finalArtifacts);
+      
       console.log(`\nContext pack generated: ${this.config.out}`);
       console.log(`Total size: ${totalSize.toLocaleString()} bytes`);
+      console.log(`Estimated tokens: ${TokenCounter.formatEstimate(tokenEstimate, this.config.verbose)}`);
+      
       if (this.config.verbose) {
         console.log(`Completed in ${elapsedTime}s`);
         
