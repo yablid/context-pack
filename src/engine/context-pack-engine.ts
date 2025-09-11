@@ -24,21 +24,24 @@ export class ContextPackEngine {
 
   async generate(): Promise<void> {
     const errorFormatter = new ErrorFormatter();
+    const startTime = Date.now();
 
     try {
       // Step 0: Validate inputs
       await this.validateInputs();
 
+      // Always show basic info
+      console.log('=== Context Pack Generation ===\n');
+      console.log(`Analyzing: ${this.rootPath}`);
       if (this.config.verbose) {
-        console.log('=== Context Pack Generation ===\n');
-        console.log(`Analyzing: ${this.rootPath}`);
         console.log(`Preset: ${this.config.preset}`);
         console.log(`Level: ${this.config.level}`);
         console.log(`Budget: ${this.config.budgetBytes.toLocaleString()} bytes`);
-        console.log('');
       }
+      console.log('');
 
       // Step 1: Detect ecosystem and validate preset
+      console.log('Detecting ecosystems in:', this.rootPath);
       const detectorRegistry = new DetectorRegistry();
       const detection = await detectorRegistry.detectAll({
         rootPath: this.rootPath,
@@ -46,23 +49,26 @@ export class ContextPackEngine {
       });
 
       if (this.config.verbose) {
-        console.log(`Detected preset: ${detection.preset?.name || 'none'}`);
+        console.log(`Found ${detection.monorepos.length} monorepo indicators`);
+        console.log(`Found ${detection.languages.length} language indicators`);
       }
+      console.log(`Detected preset: ${detection.preset?.name || 'ts-simple'}`);
 
       // Step 2: Walk filesystem
       const fileWalker = this.createFileWalker();
       const files = await fileWalker.walk(this.rootPath);
 
-      if (this.config.verbose) {
-        console.log(`Found ${files.length} files`);
-      }
+      console.log(`Found ${files.length} files`);
 
       // Step 3: Get active collectors
       const collectorRegistry = new CollectorRegistry();
       const collectors = await collectorRegistry.getActiveCollectors(this.rootPath, this.config.preset);
 
+      console.log(`Active collectors: ${collectors.map(c => c.name).join(', ')}`);
+      
       if (this.config.verbose) {
-        console.log(`Active collectors: ${collectors.map(c => c.name).join(', ')}`);
+        const estimatedTime = this.estimateProcessingTime(files.length, collectors.length);
+        console.log(`Estimated processing time: ~${estimatedTime}s`);
       }
 
       // Step 4: Run collectors with error handling and health tracking
@@ -77,6 +83,13 @@ export class ContextPackEngine {
         timeout: 30000, // 30 seconds
         memoryLimitMB: 500
       };
+
+      // Show progress for collector execution
+      if (!this.config.verbose) {
+        for (const collector of collectors) {
+          console.log(`[${collector.name}] Processing ${files.length} files`);
+        }
+      }
 
       const collectorResults = await CollectorRunner.runCollectors(collectors, context, {
         timeout: 30000,
@@ -107,11 +120,17 @@ export class ContextPackEngine {
 
       const { artifacts: finalArtifacts, downsampling } = budgetManager.enforce(allArtifacts);
 
-      if (this.config.verbose) {
-        console.log(`Final artifacts: ${finalArtifacts.length}`);
-        if (downsampling.length > 0) {
-          console.log(`Applied ${downsampling.length} downsampling decisions`);
+      // Show results for each successful collector
+      for (const result of collectorResults) {
+        if (result.artifacts.length > 0 && !result.error) {
+          const size = result.artifacts.reduce((sum, a) => sum + a.sizeHint, 0);
+          const sizeStr = this.config.verbose ? ` (${size.toLocaleString()} bytes)` : '';
+          console.log(`[${result.health.name}] Generated ${result.artifacts.length > 1 ? `${result.artifacts[0].kind} with ${result.artifacts.length} entries` : result.artifacts[0].kind}${sizeStr}`);
         }
+      }
+
+      if (this.config.verbose && downsampling.length > 0) {
+        console.log(`Applied ${downsampling.length} downsampling decisions`);
       }
 
       // Step 5.5: Schema validation
@@ -121,9 +140,7 @@ export class ContextPackEngine {
       let strictValidationError: Error | undefined;
       
       if (this.config.validateSchemas) {
-        if (this.config.verbose) {
-          console.log('Validating artifacts against schemas...');
-        }
+        console.log('Validating artifacts against schemas...');
 
         const validation = schemaValidator.validateArtifacts(finalArtifacts);
         validationStats = validation;
@@ -142,8 +159,8 @@ export class ContextPackEngine {
           .map(({ artifactId, field, message }) => ({ artifactId, field, message }));
 
         // Log validation results
+        console.log(`  Valid artifacts: ${validation.validArtifacts}/${validation.totalArtifacts}`);
         if (this.config.verbose) {
-          console.log(`  Valid artifacts: ${validation.validArtifacts}/${validation.totalArtifacts}`);
           if (validation.errorCount > 0) {
             console.log(`  Validation errors: ${validation.errorCount}`);
           }
@@ -217,9 +234,12 @@ export class ContextPackEngine {
       // Step 7: Write output
       await this.writeOutput(packMetadata, finalArtifacts);
 
+      const elapsedTime = Math.round((Date.now() - startTime) / 1000);
+      
+      console.log(`\nContext pack generated: ${this.config.out}`);
+      console.log(`Total size: ${totalSize.toLocaleString()} bytes`);
       if (this.config.verbose) {
-        console.log(`\nContext pack generated: ${this.config.out}`);
-        console.log(`Total size: ${totalSize.toLocaleString()} bytes`);
+        console.log(`Completed in ${elapsedTime}s`);
         
         // Show health summary
         if (healthSummary.failed > 0 || healthSummary.partial > 0) {
@@ -293,6 +313,18 @@ export class ContextPackEngine {
     }
 
     return Array.from(packageDirs).sort();
+  }
+
+  private estimateProcessingTime(fileCount: number, collectorCount: number): number {
+    // Rough estimation based on empirical data:
+    // - Base time: 1-2 seconds
+    // - File processing: ~0.1ms per file per collector
+    // - TypeScript analysis: ~0.5ms per file for TS collectors
+    const baseTime = 2;
+    const fileProcessingTime = (fileCount * collectorCount * 0.0001);
+    const tsAnalysisTime = fileCount > 50 ? (fileCount * 0.0005) : 0;
+    
+    return Math.max(1, Math.round(baseTime + fileProcessingTime + tsAnalysisTime));
   }
 
   private async writeOutput(packMetadata: any, artifacts: Artifact[]): Promise<void> {
