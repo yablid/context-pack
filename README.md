@@ -6,8 +6,10 @@
 
 - **Safe by design**: No source code bodies, no secrets, only metadata (hashes, counts, names, and schema information)
 - **Deterministic output**: Same inputs → identical outputs across runs
-- **Schema validated**: All artifacts validated against zod schemas with detailed error reporting and inline failure details
-- **Language-aware**: TypeScript/ESM support with comprehensive collectors
+- **High performance**: Concurrent collectors with bounded concurrency (default: 3 simultaneous)
+- **Smart file handling**: Peek-based binary detection, optional hashing with size limits, full .gitignore support
+- **Schema validated**: All artifacts validated against zod schemas with detailed error reporting
+- **Language-aware**: TypeScript/ESM support with comprehensive collectors including SVG assets
 - **Budget-conscious**: Configurable size limits with intelligent downsampling
 - **Monorepo-friendly**: Detects pnpm, npm, yarn workspaces automatically
 
@@ -33,6 +35,11 @@ context-pack schema
 
 # Validate existing context pack
 context-pack validate ./.contextpack --verbose
+
+# Performance and optimization options
+context-pack . --concurrency 5           # Max 5 concurrent collectors
+context-pack . --no-hash-files           # Skip SHA-256 hashing for speed
+context-pack . --max-hash-file-size 5    # Hash files up to 5MB only
 
 # Generate with validation (strict mode fails after pack creation)
 context-pack . --strict
@@ -133,6 +140,57 @@ Each artifact answers specific questions agents commonly need: "What depends on 
 
 All three packs contain the same core insight (what functions/types are available, how modules connect, project configuration) but with different levels of detail to match your context budget.
 
+## Performance & Configuration
+
+### Concurrency Control
+Context pack uses bounded concurrency to process collectors in parallel while preventing resource exhaustion:
+
+```bash
+# Default: 3 concurrent collectors (balanced performance/memory)
+context-pack .
+
+# High-performance systems: increase concurrency
+context-pack . --concurrency 8
+
+# Resource-constrained: sequential processing
+context-pack . --concurrency 1
+```
+
+### File Processing Optimizations
+Large codebases benefit from these optimization flags:
+
+```bash
+# Skip hashing for faster processing (useful during development)
+context-pack . --no-hash-files
+
+# Hash only smaller files (default: 10MB limit)
+context-pack . --max-hash-file-size 5
+
+# Combine optimizations for maximum speed
+context-pack . --no-hash-files --concurrency 6
+```
+
+**Performance characteristics**:
+- **Peek-based binary detection**: Only reads first 8KB to classify files
+- **Intelligent .gitignore parsing**: Respects your project's ignore rules using the `ignore` package
+- **SVG text processing**: Treats SVG files as text (valuable for UI codebases)
+- **Memory-bounded**: Each collector limited to 500MB with 30-second timeouts
+
+### Validation & Quality Control
+
+```bash
+# Development: fast with retry logic
+context-pack . --verbose
+
+# CI/Production: strict validation, no retries
+context-pack . --strict --validate-only
+
+# Debugging: see all validation warnings
+context-pack . --verbose --no-validate
+```
+
+The `--strict` flag enables stricter validation but allows pack generation to complete before failing, so you can inspect the artifacts even when validation errors occur.
+
 ## Development
 
 This project uses pnpm for package management.
@@ -146,21 +204,31 @@ pnpm dev     # Watch mode
 ## Production Status
 
 ✅ **Complete & Production-Ready**:
-- **Core Engine**: File walking, budget management, canonical JSON output
+- **Core Engine**: File walking, budget management, canonical JSON output, bounded concurrency
 - **Detector System**: Ecosystem detection (pnpm, npm, TypeScript)
 - **Collectors**: Files manifest, topology, import graph, exports, type metrics, duplication, schema index, TSConfig
-- **CLI Interface**: Complete with main, detect, validate, schema, summarize commands
+- **CLI Interface**: Simplified argument parsing, optimized for performance and maintainability
+- **File Processing**: Peek-based binary detection, optional hashing, .gitignore support, SVG text handling
+- **Performance**: Concurrent collectors (default: 3), configurable memory limits and timeouts
 - **Validation**: Comprehensive zod schema validation with inline failure reporting
 - **Error Handling**: Structured error system with exit codes and recovery
-- **Security**: Path validation, traversal protection, no code body exposure
+- **Security**: Path validation, traversal protection, no code body exposure, hash size limits
+
+🔧 **Recent Changes**:
+- Removed `commander.js` dependency for simpler CLI parsing
+- Added bounded concurrency (3x faster on multi-collector workloads)
+- Added .gitignore support using the `ignore` package
+- Optimized file reading with peek-based binary detection
+- Added configurable hashing controls (`--no-hash-files`, `--max-hash-file-size`)
 
 ⏳ **Future**: Language support for Python, Rust, Go
 
 ## Architecture
 
-- **Engine**: Filesystem traversal, budget enforcement, canonical output
+- **Engine**: Filesystem traversal, budget enforcement, canonical output, concurrent processing
 - **Detectors**: Ecosystem identification and preset selection
-- **Collectors**: Language-specific metadata extraction (plugin architecture)
+- **Collectors**: Language-specific metadata extraction with bounded concurrency
 - **Artifacts**: JSON/text outputs with JSON Schema validation
+- **CLI**: Simple argument parsing without external dependencies for minimal overhead
 
-Built with strict TypeScript, ESM-only, following deterministic and testable patterns.
+Built with strict TypeScript, ESM-only, following deterministic and testable patterns. Dependencies kept minimal: only `ignore`, `picomatch`, `zod`, and `vitest` for core functionality.

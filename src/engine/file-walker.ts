@@ -2,35 +2,51 @@ import { readdir, stat, readFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import type { FileInfo, IgnoreRules } from '../types.js';
 import picomatch from 'picomatch';
+import ignore from 'ignore';
 
 export class FileWalker {
   private ignoreRules: IgnoreRules;
-  private ignoreMatchers: Array<(s: string) => boolean> = [];
+  private gitignoreChecker: ReturnType<typeof ignore> | null = null;
+  private userIgnoreMatchers: Array<(s: string) => boolean> = [];
+  private hashFiles: boolean;
+  private maxHashFileSizeMB: number;
 
-  constructor(ignoreRules: IgnoreRules) {
+  constructor(ignoreRules: IgnoreRules, options?: { hashFiles?: boolean; maxHashFileSizeMB?: number }) {
     this.ignoreRules = ignoreRules;
-    this.compileIgnorePatterns();
+    this.hashFiles = options?.hashFiles ?? true;
+    this.maxHashFileSizeMB = options?.maxHashFileSizeMB ?? 10;
+    this.setupIgnoreMatchers();
   }
 
-  private compileIgnorePatterns(): void {
-    const allPatterns = [
-      ...this.ignoreRules.defaults,
-      ...this.ignoreRules.gitignore,
-      ...this.ignoreRules.user
-    ];
+  private setupIgnoreMatchers(): void {
+    // Setup proper .gitignore handling
+    if (this.ignoreRules.gitignore.length > 0) {
+      this.gitignoreChecker = ignore()
+        .add(this.ignoreRules.defaults)  // Add default ignores
+        .add(this.ignoreRules.gitignore); // Add .gitignore patterns
+    } else {
+      // Fallback to just defaults if no .gitignore
+      this.gitignoreChecker = ignore().add(this.ignoreRules.defaults);
+    }
 
-    this.ignoreMatchers = allPatterns.map(p => {
-      const matcher = picomatch(p, { dot: true, nocase: true });
-      return (s: string) => matcher(s) || matcher(`/${s}`) || matcher(s.startsWith('./') ? s : `./${s}`);
+    // User patterns still use picomatch for flexibility
+    this.userIgnoreMatchers = this.ignoreRules.user.map(p => {
+      return picomatch(p, { dot: true, nocase: true });
     });
   }
 
   private shouldIgnore(relativePath: string): string | null {
     const posixPath = relativePath.split(sep).join('/');
     
-    for (const match of this.ignoreMatchers) {
+    // Check .gitignore patterns first (most important)
+    if (this.gitignoreChecker?.ignores(posixPath)) {
+      return 'matches .gitignore pattern';
+    }
+
+    // Check user patterns
+    for (const match of this.userIgnoreMatchers) {
       if (match(posixPath)) {
-        return `matches ignore pattern`;
+        return 'matches user ignore pattern';
       }
     }
     
@@ -90,7 +106,7 @@ export class FileWalker {
     // Known binary extensions
     const binaryExts = new Set([
       'exe', 'bin', 'dll', 'so', 'dylib', 'a', 'lib', 'o', 'obj',
-      'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico', 'svg',
+      'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico',
       'mp3', 'mp4', 'avi', 'mov', 'wmv', 'flv', 'wav', 'ogg',
       'zip', 'tar', 'gz', 'rar', '7z', 'bz2', 'xz',
       'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
@@ -142,23 +158,57 @@ export class FileWalker {
             await walkDir(fullPath);
           } else if (stats.isFile()) {
             try {
-              // Read first part of file to check if binary
-              const buffer = await readFile(fullPath);
-              
-              if (this.isBinaryFile(fullPath, buffer)) {
+              // Quick binary check by extension first
+              if (this.isBinaryFile(fullPath)) {
                 continue; // Skip binary files
               }
-              
-              const content = buffer.toString('utf-8');
+
+              // Read first chunk to detect binary content and get sample
+              const peekSize = Math.min(8192, stats.size); // 8KB peek
+              const peekBuffer = Buffer.allocUnsafe(peekSize);
+
+              const fd = await (await import('node:fs/promises')).open(fullPath, 'r');
+              await fd.read(peekBuffer, 0, peekSize, 0);
+
+              // Double-check binary with content sample
+              if (this.isBinaryFile(fullPath, peekBuffer)) {
+                await fd.close();
+                continue; // Skip binary files
+              }
+
+              // For text files, read full content if needed for LOC
+              let fullBuffer: Buffer;
+              let content: string;
+
+              if (peekSize >= stats.size) {
+                // Small file - we already have it all
+                fullBuffer = peekBuffer.subarray(0, stats.size);
+                content = fullBuffer.toString('utf-8');
+              } else {
+                // Larger file - read the rest
+                fullBuffer = await readFile(fullPath);
+                content = fullBuffer.toString('utf-8');
+              }
+
+              await fd.close();
+
+              // Calculate hash only if enabled and file size is reasonable
+              let sha256: string;
+              if (this.hashFiles && stats.size <= this.maxHashFileSizeMB * 1024 * 1024) {
+                sha256 = await this.calculateSha256(fullBuffer);
+              } else {
+                sha256 = 'skipped-large-file';
+              }
+
               const fileInfo: FileInfo = {
                 path: relativePath.split(sep).join('/'), // Normalize to POSIX
                 bytes: stats.size,
-                sha256: await this.calculateSha256(buffer),
+                sha256,
                 loc: this.countLines(content),
                 kind: this.classifyFileKind(relativePath),
                 bucket: this.classifyBucket(relativePath)
               };
-              
+
               files.push(fileInfo);
             } catch (error) {
               // Skip files that can't be read

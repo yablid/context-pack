@@ -113,6 +113,9 @@ export interface BuildConfig {
   validateSchemas: boolean;
   validateOnly?: boolean;
   out: string;
+  hashFiles?: boolean;
+  maxHashFileSizeMB?: number;
+  concurrency?: number;
 }
 
 export interface CollectorHealth {

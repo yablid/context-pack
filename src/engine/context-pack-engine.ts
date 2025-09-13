@@ -1,4 +1,4 @@
-import { writeFile, mkdir, access } from 'node:fs/promises';
+import { writeFile, mkdir, access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BuildConfig, FileInfo, Artifact, CollectorHealth } from '../types.js';
 import { FileWalker } from './file-walker.js';
@@ -57,7 +57,7 @@ export class ContextPackEngine {
       console.log(`Detected preset: ${detection.preset?.name || 'ts-simple'}`);
 
       // Step 2: Walk filesystem
-      const fileWalker = this.createFileWalker();
+      const fileWalker = await this.createFileWalker();
       const files = await fileWalker.walk(this.rootPath);
 
       console.log(`Found ${files.length} files`);
@@ -96,7 +96,8 @@ export class ContextPackEngine {
       const collectorResults = await CollectorRunner.runCollectors(collectors, context, {
         timeout: 30000,
         memoryLimitMB: 500,
-        retries: this.config.strict ? 0 : 1 // Retry once for non-strict mode
+        retries: this.config.strict ? 0 : 1, // Retry once for non-strict mode
+        concurrency: this.config.concurrency ?? 3 // Bounded concurrency (default: 3)
       });
 
       // Collect all artifacts and health information
@@ -291,21 +292,29 @@ export class ContextPackEngine {
     await validateOutputPath(this.config.out);
   }
 
-  private createFileWalker(): FileWalker {
-    const gitignoreContent = this.loadGitignore();
+  private async createFileWalker(): Promise<FileWalker> {
+    const gitignoreContent = await this.loadGitignore();
     const ignoreRules = FileWalker.createDefaultIgnoreRules(gitignoreContent);
     
     if (this.config.exclude) {
       ignoreRules.user = this.config.exclude;
     }
 
-    return new FileWalker(ignoreRules);
+    return new FileWalker(ignoreRules, {
+      hashFiles: this.config.hashFiles,
+      maxHashFileSizeMB: this.config.maxHashFileSizeMB
+    });
   }
 
-  private loadGitignore(): string | undefined {
-    // This would load .gitignore in a real implementation
-    // For now, return undefined to use defaults only
-    return undefined;
+  private async loadGitignore(): Promise<string | undefined> {
+    try {
+      const gitignorePath = join(this.rootPath, '.gitignore');
+      const content = await readFile(gitignorePath, 'utf-8');
+      return content;
+    } catch {
+      // No .gitignore file or read error - use defaults only
+      return undefined;
+    }
   }
 
   private extractPackageDirs(files: FileInfo[]): string[] {

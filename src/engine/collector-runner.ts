@@ -21,61 +21,98 @@ export class CollectorRunner {
   static async runCollectors(
     collectors: Collector[],
     ctx: CollectorContext,
-    opts: { timeout?: number; memoryLimitMB?: number; retries?: number }
+    opts: { timeout?: number; memoryLimitMB?: number; retries?: number; concurrency?: number }
   ): Promise<CollectorRunResult[]> {
-    const results: CollectorRunResult[] = [];
-    for (const c of collectors) {
-      const maxAttempts = Math.max(0, opts.retries ?? 0) + 1;
-      let attempt = 0;
-      let lastError: any = null;
-      let finalArtifacts: Artifact[] = [];
-      let status: CollectorHealth['status'] = 'failed';
-      const start = Date.now();
+    const concurrency = opts.concurrency ?? Math.min(3, collectors.length); // Default: max 3 concurrent
 
-      while (attempt < maxAttempts) {
-        try {
-          const artifacts = await this.runWithTimeout(c, ctx, opts.timeout ?? 30000);
-          finalArtifacts = artifacts;
-          status = 'ok';
-          lastError = null;
-          break;
-        } catch (e: any) {
-          lastError = e;
-          // Do not retry on timeout
-          if (e?.name === 'CollectorTimeoutError') {
-            status = 'timeout';
+    // Create semaphore for bounded concurrency
+    let running = 0;
+    const pending: Array<() => void> = [];
+
+    const acquire = (): Promise<void> => {
+      return new Promise((resolve) => {
+        if (running < concurrency) {
+          running++;
+          resolve();
+        } else {
+          pending.push(resolve);
+        }
+      });
+    };
+
+    const release = (): void => {
+      running--;
+      const next = pending.shift();
+      if (next) {
+        running++;
+        next();
+      }
+    };
+
+    // Run single collector with retry logic
+    const runCollector = async (collector: Collector): Promise<CollectorRunResult> => {
+      await acquire();
+
+      try {
+        const maxAttempts = Math.max(0, opts.retries ?? 0) + 1;
+        let attempt = 0;
+        let lastError: any = null;
+        let finalArtifacts: Artifact[] = [];
+        let status: CollectorHealth['status'] = 'failed';
+        const start = Date.now();
+
+        while (attempt < maxAttempts) {
+          try {
+            const artifacts = await this.runWithTimeout(collector, ctx, opts.timeout ?? 30000);
+            finalArtifacts = artifacts;
+            status = 'ok';
+            lastError = null;
             break;
-          }
-          attempt++;
-          if (attempt >= maxAttempts) {
-            status = 'failed';
-            break;
+          } catch (e: any) {
+            lastError = e;
+            // Do not retry on timeout
+            if (e?.name === 'CollectorTimeoutError') {
+              status = 'timeout';
+              break;
+            }
+            attempt++;
+            if (attempt >= maxAttempts) {
+              status = 'failed';
+              break;
+            }
           }
         }
-      }
 
-      if (status === 'ok') {
-        results.push({
-          artifacts: finalArtifacts,
-          success: true,
-          health: { name: c.name, status: 'ok', durationMs: Date.now() - start }
-        });
-      } else {
-        const err = lastError;
-        results.push({
-          artifacts: [],
-          success: false,
-          error: err,
-          health: {
-            name: c.name,
-            status,
-            durationMs: Date.now() - start,
-            errorMessage: String(err?.message ?? err),
-            errorCode: err?.code
-          }
-        });
+        if (status === 'ok') {
+          return {
+            artifacts: finalArtifacts,
+            success: true,
+            health: { name: collector.name, status: 'ok', durationMs: Date.now() - start }
+          };
+        } else {
+          const err = lastError;
+          return {
+            artifacts: [],
+            success: false,
+            error: err,
+            health: {
+              name: collector.name,
+              status,
+              durationMs: Date.now() - start,
+              errorMessage: String(err?.message ?? err),
+              errorCode: err?.code
+            }
+          };
+        }
+      } finally {
+        release();
       }
-    }
+    };
+
+    // Run all collectors with bounded concurrency
+    const collectorPromises = collectors.map(runCollector);
+    const results = await Promise.all(collectorPromises);
+
     return results;
   }
 
