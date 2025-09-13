@@ -40,18 +40,34 @@ context-pack . --strict
 
 ## Output Structure
 
+Context packs are generated in three different sizes to optimize for different LLM context windows:
+
 ```
 .contextpack/
-  00-pack.json              # Pack metadata and generation info
-  10-repo-topology.json     # Workspace structure and dependencies
-  20-files-manifest.ndjson  # File inventory with hashes, LOC, and byte metrics
-  30-import-graph.json      # Import/dependency graph with degrees, reachability, SCC analysis
-  40-duplication-report.json # Code duplication metrics
-  ts/                       # TypeScript-specific artifacts
-    50-tsconfigs.json       # TypeScript configuration analysis
-    60-exports.json         # Package exports mapping
-    80-schema-index.json    # Schema definitions catalog
-    90-type-metrics.json    # TypeScript usage metrics
+  TOKEN_COUNTS.txt          # Token estimates for all pack sizes
+  full/                     # Complete analysis (~18K tokens)
+    00-pack.json            # Pack metadata and generation info
+    10-repo-topology.json   # Workspace structure and dependencies
+    20-files-manifest.ndjson # File inventory with hashes, LOC, and byte metrics
+    30-import-graph.json    # Import/dependency graph with full node/edge details
+    40-duplication-report.json # Code duplication metrics
+    ts/                     # TypeScript-specific artifacts
+      50-tsconfigs.json     # TypeScript configuration analysis
+      60-exports.json       # Package exports mapping
+      80-schema-index.json  # Schema definitions catalog
+      90-type-metrics.json  # TypeScript usage metrics
+  short/                    # Essential structure (~11K tokens)
+    00-pack.json            # Pack metadata
+    10-repo-topology.json   # Workspace structure (full)
+    20-files-manifest.ndjson # File inventory (full)
+    30-import-graph.json    # Import stats + external deps only
+    50-tsconfigs.json       # Key compiler options + summary
+    60-exports.json         # Package exports (full)
+  minimal/                  # Quick context (~7K tokens)
+    00-pack.json            # Pack metadata
+    30-import-graph.json    # Essential graph stats only
+    50-tsconfigs.json       # Core compiler settings only
+    60-exports.json         # Package exports (full)
 ```
 
 ## Artifact Reference: What Each File Contains
@@ -108,6 +124,14 @@ Each artifact is designed to give LLM agents specific insights into codebase str
 6. **Quality context**: Validation status + health metrics indicate codebase reliability and maintenance state
 
 Each artifact answers specific questions agents commonly need: "What depends on this?", "Where are the tests?", "What's the module boundary?", "How strict is the typing?", "What external libraries are used?"—all without exposing proprietary code content.
+
+## Choosing the Right Pack Size
+
+- **`full/`** - Use when you need complete architectural analysis, refactoring guidance, or comprehensive code review
+- **`short/`** - Use for focused tasks like adding features, understanding structure, or debugging specific issues
+- **`minimal/`** - Use for quick questions about exports, dependencies, or configuration—fits in any model's context window
+
+All three packs contain the same core insight (what functions/types are available, how modules connect, project configuration) but with different levels of detail to match your context budget.
 
 ## Development
 

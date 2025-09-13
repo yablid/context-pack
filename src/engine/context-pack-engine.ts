@@ -13,6 +13,7 @@ import { ErrorFormatter, createFormatterFromResults } from '../errors/error-form
 import { validateInputPath, validateOutputPath } from '../utils/path-validator.js';
 import { wrapError } from '../errors/index.js';
 import { TokenCounter } from '../utils/token-counter.js';
+import { generatePackArtifacts, flattenArtifactPaths, type PackType } from './artifact-reducer.js';
 
 export class ContextPackEngine {
   private rootPath: string;
@@ -343,75 +344,82 @@ export class ContextPackEngine {
       await mkdir(outputDir, { recursive: true });
     }
 
-    // Write pack metadata
-    const packMetadataJson = CanonicalJSON.stringify(packMetadata, !this.config.deterministic);
-    await writeFile(join(outputDir, '00-pack.json'), packMetadataJson, 'utf-8');
+    // Generate the three pack types
+    const packTypes: PackType[] = ['full', 'short', 'minimal'];
+    const packTokenCounts: Record<PackType, any> = {} as any;
 
-    // Calculate token counts for different artifact groups
-    const coreArtifacts = artifacts.filter(a => !a.filename.startsWith('ts/'));
-    const tsArtifacts = artifacts.filter(a => a.filename.startsWith('ts/'));
+    for (const packType of packTypes) {
+      const packDir = join(outputDir, packType);
+      await mkdir(packDir, { recursive: true });
 
-    const coreTokens = TokenCounter.countArtifacts(coreArtifacts.map(a => ({
-      text: a.text,
-      data: a.data,
-      kind: a.kind
-    })));
+      // Generate artifacts for this pack type
+      let packArtifacts = generatePackArtifacts(artifacts, packType);
 
-    const tsTokens = TokenCounter.countArtifacts(tsArtifacts.map(a => ({
-      text: a.text,
-      data: a.data,
-      kind: a.kind
-    })));
+      // For short/minimal, flatten ts/ paths to root level
+      if (packType === 'short' || packType === 'minimal') {
+        packArtifacts = flattenArtifactPaths(packArtifacts);
+      }
 
-    const totalTokens = TokenCounter.countArtifacts(artifacts.map(a => ({
-      text: a.text,
-      data: a.data,
-      kind: a.kind
-    })));
+      // Write pack metadata (include in all pack types for now)
+      const packMetadataJson = CanonicalJSON.stringify({
+        ...packMetadata,
+        packType,
+        artifactCount: packArtifacts.length
+      }, !this.config.deterministic);
+      await writeFile(join(packDir, '00-pack.json'), packMetadataJson, 'utf-8');
 
-    // Include pack metadata in token count
-    const packTokensEstimate = TokenCounter.countText(packMetadataJson);
-    const finalTotalTokens = {
-      characters: totalTokens.characters + packTokensEstimate.characters,
-      tokensConservative: totalTokens.tokensConservative + packTokensEstimate.tokensConservative,
-      tokensOptimistic: totalTokens.tokensOptimistic + packTokensEstimate.tokensOptimistic,
-      tokensAverage: totalTokens.tokensAverage + packTokensEstimate.tokensAverage
-    };
+      // Calculate token count for this pack
+      const packTokensEstimate = TokenCounter.countText(packMetadataJson);
+      const artifactTokens = TokenCounter.countArtifacts(packArtifacts.map(a => ({
+        text: a.text,
+        data: a.data,
+        kind: a.kind
+      })));
 
-    // Write token count summary
+      packTokenCounts[packType] = {
+        characters: artifactTokens.characters + packTokensEstimate.characters,
+        tokensConservative: artifactTokens.tokensConservative + packTokensEstimate.tokensConservative,
+        tokensOptimistic: artifactTokens.tokensOptimistic + packTokensEstimate.tokensOptimistic,
+        tokensAverage: artifactTokens.tokensAverage + packTokensEstimate.tokensAverage
+      };
+
+      // Write artifacts for this pack type
+      for (const artifact of packArtifacts) {
+        const filePath = join(packDir, artifact.filename);
+
+        // Ensure subdirectory exists (for full pack with ts/ structure)
+        const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+        if (dir !== packDir) {
+          await mkdir(dir, { recursive: true });
+        }
+
+        if (artifact.kind === 'json') {
+          const content = CanonicalJSON.stringify(artifact.data, !this.config.deterministic);
+          await writeFile(filePath, content, 'utf-8');
+        } else {
+          await writeFile(filePath, artifact.text || '', 'utf-8');
+        }
+      }
+    }
+
+    // Generate enhanced token count summary
     const tokenSummary = [
       'Context Pack Token Estimates',
       '============================',
       '',
-      `Total tokens: ~${finalTotalTokens.tokensAverage.toLocaleString()} (range: ${finalTotalTokens.tokensConservative.toLocaleString()}-${finalTotalTokens.tokensOptimistic.toLocaleString()})`,
-      `Core artifacts: ~${coreTokens.tokensAverage.toLocaleString()} tokens`,
-      `TypeScript artifacts: ~${tsTokens.tokensAverage.toLocaleString()} tokens`,
-      `Pack metadata: ~${packTokensEstimate.tokensAverage.toLocaleString()} tokens`,
+      `Full pack: ~${packTokenCounts.full.tokensAverage.toLocaleString()} tokens (range: ${packTokenCounts.full.tokensConservative.toLocaleString()}-${packTokenCounts.full.tokensOptimistic.toLocaleString()})`,
+      `Short pack: ~${packTokenCounts.short.tokensAverage.toLocaleString()} tokens (range: ${packTokenCounts.short.tokensConservative.toLocaleString()}-${packTokenCounts.short.tokensOptimistic.toLocaleString()})`,
+      `Minimal pack: ~${packTokenCounts.minimal.tokensAverage.toLocaleString()} tokens (range: ${packTokenCounts.minimal.tokensConservative.toLocaleString()}-${packTokenCounts.minimal.tokensOptimistic.toLocaleString()})`,
       '',
-      `Total characters: ${finalTotalTokens.characters.toLocaleString()}`,
+      'Pack Contents:',
+      '- full/: Complete analysis (all artifacts + TypeScript subdirectory)',
+      '- short/: Essential structure (topology, manifest, filtered import-graph, tsconfig, exports)',
+      '- minimal/: Quick context (filtered import-graph, tsconfig, exports only)',
       '',
       'Token estimates are approximate and vary by model tokenizer.',
       'Conservative estimates assume ~3 chars/token, optimistic assume ~5 chars/token.'
     ].join('\n');
 
     await writeFile(join(outputDir, 'TOKEN_COUNTS.txt'), tokenSummary, 'utf-8');
-
-    // Write artifacts
-    for (const artifact of artifacts) {
-      const filePath = join(outputDir, artifact.filename);
-      
-      // Ensure subdirectory exists (e.g., ts/ subdirectory)
-      const dir = filePath.substring(0, filePath.lastIndexOf('/'));
-      if (dir !== outputDir) {
-        await mkdir(dir, { recursive: true });
-      }
-
-      if (artifact.kind === 'json') {
-        const content = CanonicalJSON.stringify(artifact.data, !this.config.deterministic);
-        await writeFile(filePath, content, 'utf-8');
-      } else {
-        await writeFile(filePath, artifact.text || '', 'utf-8');
-      }
-    }
   }
 }
