@@ -347,6 +347,55 @@ export class ContextPackEngine {
     const packMetadataJson = CanonicalJSON.stringify(packMetadata, !this.config.deterministic);
     await writeFile(join(outputDir, '00-pack.json'), packMetadataJson, 'utf-8');
 
+    // Calculate token counts for different artifact groups
+    const coreArtifacts = artifacts.filter(a => !a.filename.startsWith('ts/'));
+    const tsArtifacts = artifacts.filter(a => a.filename.startsWith('ts/'));
+
+    const coreTokens = TokenCounter.countArtifacts(coreArtifacts.map(a => ({
+      text: a.text,
+      data: a.data,
+      kind: a.kind
+    })));
+
+    const tsTokens = TokenCounter.countArtifacts(tsArtifacts.map(a => ({
+      text: a.text,
+      data: a.data,
+      kind: a.kind
+    })));
+
+    const totalTokens = TokenCounter.countArtifacts(artifacts.map(a => ({
+      text: a.text,
+      data: a.data,
+      kind: a.kind
+    })));
+
+    // Include pack metadata in token count
+    const packTokensEstimate = TokenCounter.countText(packMetadataJson);
+    const finalTotalTokens = {
+      characters: totalTokens.characters + packTokensEstimate.characters,
+      tokensConservative: totalTokens.tokensConservative + packTokensEstimate.tokensConservative,
+      tokensOptimistic: totalTokens.tokensOptimistic + packTokensEstimate.tokensOptimistic,
+      tokensAverage: totalTokens.tokensAverage + packTokensEstimate.tokensAverage
+    };
+
+    // Write token count summary
+    const tokenSummary = [
+      'Context Pack Token Estimates',
+      '============================',
+      '',
+      `Total tokens: ~${finalTotalTokens.tokensAverage.toLocaleString()} (range: ${finalTotalTokens.tokensConservative.toLocaleString()}-${finalTotalTokens.tokensOptimistic.toLocaleString()})`,
+      `Core artifacts: ~${coreTokens.tokensAverage.toLocaleString()} tokens`,
+      `TypeScript artifacts: ~${tsTokens.tokensAverage.toLocaleString()} tokens`,
+      `Pack metadata: ~${packTokensEstimate.tokensAverage.toLocaleString()} tokens`,
+      '',
+      `Total characters: ${finalTotalTokens.characters.toLocaleString()}`,
+      '',
+      'Token estimates are approximate and vary by model tokenizer.',
+      'Conservative estimates assume ~3 chars/token, optimistic assume ~5 chars/token.'
+    ].join('\n');
+
+    await writeFile(join(outputDir, 'TOKEN_COUNTS.txt'), tokenSummary, 'utf-8');
+
     // Write artifacts
     for (const artifact of artifacts) {
       const filePath = join(outputDir, artifact.filename);

@@ -54,6 +54,61 @@ context-pack . --strict
     90-type-metrics.json    # TypeScript usage metrics
 ```
 
+## Artifact Reference: What Each File Contains
+
+Each artifact is designed to give LLM agents specific insights into codebase structure, quality, and patterns without exposing source code.
+
+### Core Artifacts
+
+**`00-pack.json`** - Pack metadata and generation summary
+- **Contents**: Creation timestamp, git state, budgets used/available, collector health status, validation results
+- **Agent value**: Establishes context trust (git commit, generation time), identifies any collection failures that might affect completeness, shows which language ecosystems were detected
+
+**`10-repo-topology.json`** - Workspace and package structure
+- **Contents**: Package.json analysis, workspace relationships, lockfile type (pnpm/npm/yarn), dependency lists
+- **Agent value**: Understand monorepo structure, package boundaries, build system in use—critical for suggesting changes that respect workspace architecture
+
+**`20-files-manifest.ndjson`** - Complete file inventory with metadata
+- **Contents**: Every file's path, size, line count, hash, categorization (source/config/asset/test), risk bucket
+- **Agent value**: Understand codebase size/scope, locate configuration files, identify test patterns, assess which files to prioritize for analysis based on size and type
+
+**`30-import-graph.json`** - Module dependency relationships and analysis
+- **Contents**: Import/export edges between files, external dependencies usage, graph statistics (roots, leaves, cycles), reachability analysis, strongly connected components
+- **Agent value**: Critical for understanding code architecture—identify entry points, shared utilities, circular dependencies, and the impact radius of proposed changes
+
+**`40-duplication-report.json`** - Code similarity analysis
+- **Contents**: Detected duplicate code clusters, file similarity metrics, compression ratios
+- **Agent value**: Identify refactoring opportunities, understand code patterns that are repeated (good candidates for abstraction), assess codebase maintenance quality
+
+### TypeScript-Specific Artifacts
+
+**`ts/50-tsconfigs.json`** - TypeScript configuration analysis
+- **Contents**: Parsed tsconfig.json files, compiler options, include/exclude patterns, resolved settings, strictness analysis
+- **Agent value**: Understand type checking rigor, compilation targets, module system—essential for suggesting TypeScript code changes that respect project configuration
+
+**`ts/60-exports.json`** - Package API surface analysis
+- **Contents**: All exported functions, types, and interfaces from each module, organized by file with full type signatures
+- **Agent value**: Understand public APIs without reading source, identify breaking changes, find available utilities, understand module boundaries and contracts
+
+**`ts/80-schema-index.json`** - Schema and validation definitions
+- **Contents**: Zod schemas, JSON Schema definitions, validation patterns found in codebase
+- **Agent value**: Understand data validation patterns, API contracts, and type safety approaches—helps suggest consistent validation patterns
+
+**`ts/90-type-metrics.json`** - TypeScript usage patterns
+- **Contents**: Usage of `any`, `unknown`, `never`, type assertions, `satisfies` operator, verbatim module syntax adoption
+- **Agent value**: Assess TypeScript maturity level, identify type safety gaps or patterns, suggest improvements aligned with current codebase practices
+
+## Why This Structure Benefits LLM Agents
+
+1. **No hallucination risk**: All data is extracted, not inferred—agents can trust structural information
+2. **Change impact analysis**: Import graphs + exports let agents predict what breaks when files change
+3. **Pattern recognition**: Duplication reports + type metrics reveal codebase conventions to follow
+4. **Scope awareness**: File manifests prevent agents from assuming files that don't exist
+5. **Architecture respect**: Topology + tsconfig help agents suggest changes that fit existing patterns
+6. **Quality context**: Validation status + health metrics indicate codebase reliability and maintenance state
+
+Each artifact answers specific questions agents commonly need: "What depends on this?", "Where are the tests?", "What's the module boundary?", "How strict is the typing?", "What external libraries are used?"—all without exposing proprietary code content.
+
 ## Development
 
 This project uses pnpm for package management.
