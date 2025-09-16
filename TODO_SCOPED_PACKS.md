@@ -8,15 +8,18 @@
 - [x] Add CLI flags: --scope, --scope-allow-code, --scope-budget, --scope-mode, --scope-include
 - [x] Extend BuildConfig interface for scope options
 
-## Phase 2: Core Pipeline
-- [ ] Create ScopedCollector (extends BaseCollector, not registered)
-- [ ] Implement GraphBuilder for dependency graph construction
-- [ ] Implement Ranker with weighted BFS + token budgeting
-- [ ] Implement Slicer for code range extraction
-- [ ] Implement StubGenerator for .d.ts generation
+## Phase 2: Core Pipeline ✅
+- [x] Create ScopedCollector (extends BaseCollector, not registered)
+- [x] Implement GraphBuilder for dependency graph construction
+- [x] Implement Ranker with weighted BFS + token budgeting
+- [x] Implement Slicer for code range extraction
+- [x] Implement StubGenerator for .d.ts generation
+- [x] Implement ScopedPackager for artifact creation
 
-## Phase 3: Integration
-- [ ] Modify ContextPackEngine to conditionally invoke ScopedCollector
+## Phase 3: Integration ⚠️
+- [x] Modify ContextPackEngine to conditionally invoke ScopedCollector
+- [x] Add scoped pack output directory generation
+- [ ] ⚠️  FIX: Symbol resolution in TsProgramService (currently incomplete)
 - [ ] Test scoped pack generation end-to-end
 
 ## Phase 4: Testing & Validation
@@ -26,11 +29,21 @@
 - [ ] Compilation test for generated stubs
 - [ ] Security test for risk gating
 
-## Current Status: Phase 1 Complete ✅, Starting Phase 2
-Phase 1 completed:
-- TsProgramService with comprehensive FQN resolution
-- 5 schema definitions for scoped artifacts
-- CLI flags and configuration plumbing
-- All schemas registered in SCHEMA_REGISTRY
+## Current Status: Phase 2 ✅ + Phase 3 Core ✅, Need Symbol Resolution Fix
 
-Next: Implement core pipeline components
+### Completed ✅
+- All core pipeline components implemented
+- Engine integration with conditional scoped collector invocation
+- CLI flags and configuration plumbing working
+- Build system compiles without errors
+- Scoped pack output structure working
+
+### Critical Issue ⚠️
+- TsProgramService symbol resolution incomplete
+- Needs proper TypeScript AST traversal for FQN resolution
+- Currently fails to resolve basic exports like BuildConfig
+
+### Next Steps
+1. Fix TsProgramService symbol resolution
+2. Test end-to-end scoped pack generation
+3. Add comprehensive test suite

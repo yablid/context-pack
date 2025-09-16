@@ -207,13 +207,15 @@ export class TsProgramService {
     }
 
     // Use TypeScript's findReferencedSymbols
-    const referencedSymbols = ts.FindAllReferences.findReferencedSymbols(
-      this.typeChecker,
-      symbolRef.node.pos,
-      symbolRef.sourceFile,
-      this.program,
-      this.program.getSourceFiles()
-    );
+    // Note: This API might not be available in all TypeScript versions
+    try {
+      const referencedSymbols = (ts as any).FindAllReferences?.findReferencedSymbols?.(
+        this.typeChecker,
+        symbolRef.node.pos,
+        symbolRef.sourceFile,
+        this.program,
+        this.program.getSourceFiles()
+      );
 
     if (referencedSymbols) {
       for (const referencedSymbol of referencedSymbols) {
@@ -239,6 +241,10 @@ export class TsProgramService {
           }
         }
       }
+    }
+    } catch (error) {
+      // FindAllReferences API not available, continue without references
+      console.warn('FindAllReferences API not available in this TypeScript version');
     }
 
     return references;
@@ -367,7 +373,7 @@ export class TsProgramService {
 
   // Private helper methods
 
-  private findTsConfig(rootPath: string): string | null {
+  private findTsConfig(rootPath: string): string | undefined {
     const candidates = ['tsconfig.json', 'jsconfig.json'];
     for (const candidate of candidates) {
       try {
@@ -378,7 +384,7 @@ export class TsProgramService {
         continue;
       }
     }
-    return null;
+    return undefined;
   }
 
   private createProgram(configPath: string): ts.Program {
@@ -569,15 +575,17 @@ export class TsProgramService {
 
   private getNodeAtPosition(sourceFile: ts.SourceFile, position: number): ts.Node | null {
     const getContainingNode = (node: ts.Node): ts.Node => {
+      let result = node;
       ts.forEachChild(node, child => {
         if (child.pos <= position && position < child.end) {
-          return getContainingNode(child);
+          result = getContainingNode(child);
         }
       });
-      return node;
+      return result;
     };
 
-    return getContainingNode(sourceFile);
+    const result = getContainingNode(sourceFile);
+    return result === sourceFile ? null : result;
   }
 
   private extractTypeReferences(typeNode: ts.TypeNode): FQN[] {
@@ -609,11 +617,11 @@ export class TsProgramService {
       };
     }
 
-    if (ts.isPropertyAccessExpression(callExpr.expression) && ts.isIdentifier(callExpr.name)) {
+    if (ts.isPropertyAccessExpression(callExpr.expression) && ts.isIdentifier(callExpr.expression.name)) {
       // Method call like obj.method()
       return {
         path: 'unknown', // Need to resolve this properly
-        symbol: callExpr.name.text,
+        symbol: callExpr.expression.name.text,
         type: 'export'
       };
     }

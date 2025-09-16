@@ -1,5 +1,6 @@
 import { writeFile, mkdir, access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import type { BuildConfig, FileInfo, Artifact, CollectorHealth } from '../types.js';
 import { FileWalker } from './file-walker.js';
 import { BudgetManager } from './budget-manager.js';
@@ -14,6 +15,7 @@ import { validateInputPath, validateOutputPath } from '../utils/path-validator.j
 import { wrapError } from '../errors/index.js';
 import { TokenCounter } from '../utils/token-counter.js';
 import { generatePackArtifacts, flattenArtifactPaths, type PackType } from './artifact-reducer.js';
+import { createScopedCollector } from '../collectors/scoped-collector.js';
 
 export class ContextPackEngine {
   private rootPath: string;
@@ -122,6 +124,60 @@ export class ContextPackEngine {
       });
 
       const { artifacts: finalArtifacts, downsampling } = budgetManager.enforce(allArtifacts);
+
+      // Step 5.1: Optional scoped pack generation
+      let scopedArtifacts: Artifact[] = [];
+      if (this.config.scope) {
+        try {
+          console.log(`\nGenerating scoped pack for: ${this.config.scope.seed}`);
+
+          const scopedCollector = createScopedCollector({
+            seed: this.config.scope.seed,
+            budgetTokens: this.config.scope.budgetTokens,
+            mode: this.config.scope.mode,
+            allowCodeBodies: this.config.scope.allowCodeBodies,
+            include: this.config.scope.include
+          });
+
+          // Check if scoped collector can work with this project
+          const canProcess = await scopedCollector.detect(this.rootPath);
+          if (!canProcess) {
+            throw new Error('Scoped analysis not available for this project (no TypeScript configuration found)');
+          }
+
+          // Run scoped collector
+          const scopedResults = await scopedCollector.collect(context);
+          scopedArtifacts = scopedResults;
+
+          if (this.config.verbose) {
+            const scopedSize = scopedArtifacts.reduce((sum, a) => sum + a.sizeHint, 0);
+            console.log(`Generated scoped pack: ${scopedArtifacts.length} artifacts, ${scopedSize.toLocaleString()} bytes`);
+          }
+
+          // Add scoped artifacts to health tracking
+          healths.push({
+            name: 'scoped',
+            status: 'ok',
+            durationMs: 0 // TODO: track actual duration
+          });
+
+        } catch (error: any) {
+          console.warn(`Scoped pack generation failed: ${error?.message || String(error)}`);
+
+          // Add failed scoped collector to health tracking
+          healths.push({
+            name: 'scoped',
+            status: 'failed',
+            durationMs: 0,
+            errorMessage: error?.message || String(error)
+          });
+
+          // In strict mode, fail completely
+          if (this.config.strict) {
+            throw error;
+          }
+        }
+      }
 
       // Show results for each successful collector
       for (const result of collectorResults) {
@@ -235,7 +291,7 @@ export class ContextPackEngine {
       );
 
       // Step 7: Write output
-      await this.writeOutput(packMetadata, finalArtifacts);
+      await this.writeOutput(packMetadata, finalArtifacts, scopedArtifacts);
 
       const elapsedTime = Math.round((Date.now() - startTime) / 1000);
       
@@ -343,7 +399,7 @@ export class ContextPackEngine {
     return Math.max(1, Math.round(baseTime + fileProcessingTime + tsAnalysisTime));
   }
 
-  private async writeOutput(packMetadata: any, artifacts: Artifact[]): Promise<void> {
+  private async writeOutput(packMetadata: any, artifacts: Artifact[], scopedArtifacts: Artifact[] = []): Promise<void> {
     const outputDir = this.config.out;
 
     // Ensure output directory exists
@@ -411,6 +467,48 @@ export class ContextPackEngine {
       }
     }
 
+    // Write scoped pack artifacts if present
+    if (scopedArtifacts.length > 0) {
+      const seedHash = this.generateSeedHash();
+      const scopedDir = join(outputDir, 'scoped', seedHash);
+      await mkdir(scopedDir, { recursive: true });
+
+      console.log(`Writing scoped pack to: ${scopedDir}`);
+
+      for (const artifact of scopedArtifacts) {
+        const filePath = join(scopedDir, artifact.filename.replace('scoped/', ''));
+
+        // Ensure subdirectory exists
+        const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+        if (dir !== scopedDir) {
+          await mkdir(dir, { recursive: true });
+        }
+
+        if (artifact.kind === 'json') {
+          const content = CanonicalJSON.stringify(artifact.data, !this.config.deterministic);
+          await writeFile(filePath, content, 'utf-8');
+        } else {
+          await writeFile(filePath, artifact.text || '', 'utf-8');
+        }
+      }
+
+      // Update main pack metadata to reference scoped pack
+      if (this.config.scope) {
+        // Add scoped pack reference to main pack metadata
+        const scopedRef = {
+          seed: this.config.scope.seed,
+          path: `scoped/${seedHash}`,
+          hash: seedHash
+        };
+
+        // We'll need to update the pack metadata files to include this reference
+        // For now, just log it
+        if (this.config.verbose) {
+          console.log(`Scoped pack reference: ${JSON.stringify(scopedRef)}`);
+        }
+      }
+    }
+
     // Generate enhanced token count summary
     const tokenSummary = [
       'Context Pack Token Estimates',
@@ -430,5 +528,22 @@ export class ContextPackEngine {
     ].join('\n');
 
     await writeFile(join(outputDir, 'TOKEN_COUNTS.txt'), tokenSummary, 'utf-8');
+  }
+
+  private generateSeedHash(): string {
+    if (!this.config.scope) {
+      return 'unknown';
+    }
+
+    // Create a deterministic hash based on scope configuration
+    const hashInput = JSON.stringify({
+      seed: this.config.scope.seed,
+      mode: this.config.scope.mode,
+      budgetTokens: this.config.scope.budgetTokens,
+      allowCodeBodies: this.config.scope.allowCodeBodies,
+      include: this.config.scope.include
+    });
+
+    return createHash('sha256').update(hashInput).digest('hex').substring(0, 16);
   }
 }
