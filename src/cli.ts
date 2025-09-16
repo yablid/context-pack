@@ -27,6 +27,12 @@ interface CLIArgs {
   hashFiles: boolean;
   maxHashFileSizeMB: number;
   concurrency: number;
+  // Scoped pack args
+  scope?: string;
+  scopeAllowCode: boolean;
+  scopeBudget: number;
+  scopeMode: 'static' | 'hybrid';
+  scopeInclude?: string[];
 }
 
 function parseArgs(): CLIArgs {
@@ -93,7 +99,13 @@ function parseArgs(): CLIArgs {
     deterministic: !getFlag('no-deterministic'),
     hashFiles: !getFlag('no-hash-files'),
     maxHashFileSizeMB: getNumber('max-hash-file-size', 10),
-    concurrency: getNumber('concurrency', 3)
+    concurrency: getNumber('concurrency', 3),
+    // Scoped pack flags
+    scope: getValue('scope', '').trim() || undefined,
+    scopeAllowCode: getFlag('scope-allow-code'),
+    scopeBudget: getNumber('scope-budget', 20000),
+    scopeMode: getValue('scope-mode', 'static') as CLIArgs['scopeMode'],
+    scopeInclude: getArray('scope-include')
   };
 }
 
@@ -124,6 +136,14 @@ OPTIONS:
   --no-hash-files           Disable SHA-256 hashing of files
   --max-hash-file-size <mb> Maximum file size to hash in MB (default: 10)
   --concurrency <num>       Max concurrent collectors (default: 3)
+
+SCOPED PACK OPTIONS:
+  --scope <fqn>             Generate scoped pack for symbol (path#symbol)
+  --scope-allow-code        Allow code bodies in scoped pack (security risk)
+  --scope-budget <tokens>   Token budget for scoped pack (default: 20000)
+  --scope-mode <mode>       Analysis mode: static|hybrid (default: static)
+  --scope-include <list>    Include tests,docs (comma-separated)
+
   -h, --help                Show this help
   -v, --version             Show version
 
@@ -133,6 +153,11 @@ EXAMPLES:
   context-pack . --no-hash-files --preset ts-simple
   context-pack detect .
   context-pack validate ./.contextpack --strict
+
+SCOPED PACK EXAMPLES:
+  context-pack . --scope src/engine/engine.ts#createEngine
+  context-pack . --scope src/types.ts#BuildConfig --scope-allow-code
+  context-pack . --scope src/utils/helper.ts#line:42:10 --scope-budget 10000
 `);
 }
 
@@ -166,7 +191,20 @@ async function main() {
       validateOnly: config.validateOnly,
       out: config.out,
       hashFiles: config.hashFiles,
-      maxHashFileSizeMB: config.maxHashFileSizeMB
+      maxHashFileSizeMB: config.maxHashFileSizeMB,
+      // Scope configuration
+      ...(config.scope && {
+        scope: {
+          seed: config.scope,
+          budgetTokens: config.scopeBudget,
+          mode: config.scopeMode,
+          allowCodeBodies: config.scopeAllowCode,
+          include: {
+            tests: config.scopeInclude?.includes('tests'),
+            docs: config.scopeInclude?.includes('docs')
+          }
+        }
+      })
     };
 
     const engine = new ContextPackEngine(config.path, buildConfig);

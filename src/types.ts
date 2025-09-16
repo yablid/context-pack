@@ -116,6 +116,17 @@ export interface BuildConfig {
   hashFiles?: boolean;
   maxHashFileSizeMB?: number;
   concurrency?: number;
+  // Scoped pack configuration
+  scope?: {
+    seed: string;
+    budgetTokens: number;
+    mode: 'static' | 'hybrid';
+    allowCodeBodies: boolean;
+    include?: {
+      tests?: boolean;
+      docs?: boolean;
+    };
+  };
 }
 
 export interface CollectorHealth {

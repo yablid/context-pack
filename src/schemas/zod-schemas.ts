@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import { ScopedScopeSchema } from './scoped-scope.js';
+import { ScopedSymbolGraphSchema } from './scoped-symbol-graph.js';
+import { ScopedSlicesSchema } from './scoped-slices.js';
+import { ScopedStubsSchema } from './scoped-stubs.js';
+import { ScopedIndexSchema } from './scoped-index.js';
 
 // Base schemas
 export const PackMetadataSchema = z.object({
@@ -204,7 +209,7 @@ export const TextArtifactSchema = z.string();
 
 export const SCHEMA_REGISTRY = {
   '00-pack': PackMetadataSchema,
-  '10-repo-topology': RepoTopologySchema, 
+  '10-repo-topology': RepoTopologySchema,
   '20-files-manifest': FileInfoSchema,
   '30-import-graph': ImportGraphSchema,
   '40-duplication-report': DuplicationReportSchema,
@@ -212,7 +217,13 @@ export const SCHEMA_REGISTRY = {
   'ts/60-exports': ExportsSchema,
   'ts/70-public-api': TextArtifactSchema,
   'ts/80-schema-index': SchemaIndexSchema,
-  'ts/90-type-metrics': TypeMetricsSchema
+  'ts/90-type-metrics': TypeMetricsSchema,
+  // Scoped pack schemas
+  'scoped/00-scope': ScopedScopeSchema,
+  'scoped/10-symbol-graph': ScopedSymbolGraphSchema,
+  'scoped/20-slices': ScopedSlicesSchema,
+  'scoped/30-stubs': ScopedStubsSchema,
+  'scoped/40-index': ScopedIndexSchema
 } as const;
 
 export type SchemaId = keyof typeof SCHEMA_REGISTRY;
