@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { PackMetadata, BuildConfig, DownsamplingDecision } from '../core/types.js';
-import { CanonicalJSON } from '../core/io/canonical-json.js';
-import { getGitInfo } from '../utils/git-info.js';
+import type { PackMetadata, BuildConfig, DownsamplingDecision } from '../../core/types.js';
+import { CanonicalJSON } from '../../core/io/canonical-json.js';
+import { getGitInfo } from '../../core/git-info.js';
 
 export class PackGenerator {
   private rootPath: string;

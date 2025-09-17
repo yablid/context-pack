@@ -11,8 +11,8 @@ import type { ScopedSlice } from '../../core/validation/scoped-slices.js';
 import type { ScopedIndexEntry } from '../../core/validation/scoped-index.js';
 import { CanonicalJSON } from '../../core/io/canonical-json.js';
 import { TokenCounter } from '../../core/tokens/token-counter.js';
-import { getGitInfo } from '../../utils/git-info.js';
-import { BudgetPolicy } from '../../utils/budget-policy.js';
+import { getGitInfo } from '../../core/git-info.js';
+import { BudgetPolicy } from '../../core/tokens/budget-policy.js';
 
 export interface PackagingInput {
   config: ScopedConfig;

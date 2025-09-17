@@ -1,6 +1,6 @@
-import type { Artifact, CollectorRunResult, CollectorHealth } from '../core/types.js';
-import type { Collector, CollectorContext } from '../core/contracts/collector.js';
-import { CollectorTimeoutError } from '../errors/specific-errors.js';
+import type { Artifact, CollectorRunResult, CollectorHealth } from '../../core/types.js';
+import type { Collector, CollectorContext } from '../../core/contracts/collector.js';
+import { CollectorTimeoutError } from '../../errors/specific-errors.js';
 
 export class CollectorRunner {
   static async runCollectors(
