@@ -1,0 +1,684 @@
+==== DIRECTORY: src/schemas ====
+
+==== FILE: src/schemas/scoped-index.ts (LOC 97) ====
+import { z } from 'zod';
+
+/**
+ * Schema for scoped/40-index.ndjson - Symbol to slice mapping with rationale
+ * Each line is a JSON object representing the mapping for one symbol
+ */
+export const ScopedIndexEntrySchema = z.object({
+  /** Symbol identifier */
+  symbol: z.string(),
+
+  /** Symbol name (human-readable) */
+  name: z.string(),
+
+  /** Symbol kind */
+  kind: z.enum([
+    'function', 'class', 'interface', 'type', 'enum', 'var', 'const',
+    'method', 'property', 'constructor', 'getter', 'setter',
+    'namespace', 'module', 'default'
+  ] as const),
+
+  /** File path where symbol is defined */
+  path: z.string(),
+
+  /** Whether this symbol was included in slices */
+  included: z.boolean(),
+
+  /** Slices that contain this symbol */
+  slices: z.array(z.object({
+    /** File path of the slice */
+    path: z.string(),
+    /** Start line of slice */
+    start: z.number().int().positive(),
+    /** End line of slice */
+    end: z.number().int().positive(),
+    /** Whether this is the primary slice for this symbol */
+    primary: z.boolean().optional()
+  })),
+
+  /** Reasons why this symbol was included/excluded */
+  reasons: z.array(z.string()),
+
+  /** Graph ranking information */
+  ranking: z.object({
+    /** Distance from seed symbol */
+    distance: z.number().int().nonnegative(),
+    /** Final ranking score */
+    score: z.number(),
+    /** Whether included due to budget constraints */
+    withinBudget: z.boolean()
+  }),
+
+  /** Dependencies (outgoing edges) */
+  dependencies: z.array(z.object({
+    /** Target symbol ID */
+    target: z.string(),
+    /** Edge type */
+    type: z.string(),
+    /** Edge weight */
+    weight: z.number()
+  })).optional(),
+
+  /** Dependents (incoming edges) */
+  dependents: z.array(z.object({
+    /** Source symbol ID */
+    source: z.string(),
+    /** Edge type */
+    type: z.string(),
+    /** Edge weight */
+    weight: z.number()
+  })).optional(),
+
+  /** External package information (for external symbols) */
+  external: z.object({
+    /** Package name */
+    package: z.string(),
+    /** Import specifier used */
+    specifier: z.string(),
+    /** Whether this was stubbed */
+    stubbed: z.boolean()
+  }).optional(),
+
+  /** Token count estimate for this symbol's slices */
+  tokens: z.object({
+    conservative: z.number().int().nonnegative(),
+    optimistic: z.number().int().nonnegative(),
+    average: z.number().int().nonnegative()
+  }).optional(),
+
+  /** Additional metadata */
+  meta: z.record(z.string(), z.unknown()).optional()
+});
+
+export type ScopedIndexEntry = z.infer<typeof ScopedIndexEntrySchema>;
+
+/**
+ * Schema for the entire NDJSON file (array of entries for validation)
+ */
+export const ScopedIndexSchema = z.array(ScopedIndexEntrySchema);
+==== END ====
+
+==== FILE: src/schemas/scoped-scope.ts (LOC 82) ====
+import { z } from 'zod';
+
+/**
+ * Schema for scoped/00-scope.json - Scope metadata and reproducibility
+ */
+export const ScopedScopeSchema = z.object({
+  /** Specification version for scoped packs */
+  specVersion: z.literal('1'),
+
+  /** Original seed FQN string */
+  seed: z.string(),
+
+  /** Git commit hash for reproducibility */
+  commit: z.string().optional(),
+
+  /** Git branch */
+  branch: z.string().optional(),
+
+  /** Whether git working directory was dirty */
+  isDirty: z.boolean().optional(),
+
+  /** Scoped analysis mode */
+  mode: z.enum(['static', 'hybrid'] as const),
+
+  /** Budget constraints applied */
+  budgets: z.object({
+    /** Token budget for slices */
+    tokens: z.number().int().positive(),
+    /** Global byte budget (inherited from main pack) */
+    bytes: z.number().int().positive()
+  }),
+
+  /** Policy settings */
+  policy: z.object({
+    /** Whether test files were included */
+    includeTests: z.boolean(),
+    /** Whether documentation files were included */
+    includeDocs: z.boolean(),
+    /** Whether types were preferred over implementations */
+    preferTypes: z.boolean(),
+    /** Whether code bodies were allowed to be emitted */
+    allowCodeBodies: z.boolean()
+  }),
+
+  /** Determinism versioning */
+  determinism: z.object({
+    /** Edge weight algorithm version */
+    edgeWeights: z.string(),
+    /** Sorting algorithm version */
+    sort: z.string()
+  }),
+
+  /** Analysis results summary */
+  results: z.object({
+    /** Total symbols discovered */
+    totalSymbols: z.number().int().nonnegative(),
+    /** Symbols included in final output */
+    includedSymbols: z.number().int().nonnegative(),
+    /** Symbols excluded due to budget constraints */
+    budgetExceeded: z.number().int().nonnegative(),
+    /** Symbols converted to stubs */
+    stubbed: z.number().int().nonnegative(),
+    /** Total files touched */
+    totalFiles: z.number().int().nonnegative(),
+    /** Maximum graph depth reached */
+    maxDepth: z.number().int().nonnegative()
+  }),
+
+  /** Optional dynamic analysis results (for hybrid mode) */
+  dynamic: z.object({
+    /** Command used to gather coverage */
+    command: z.string(),
+    /** Coverage percentage achieved */
+    coverage: z.number().min(0).max(100),
+    /** Additional symbols discovered through execution */
+    dynamicSymbols: z.number().int().nonnegative()
+  }).optional(),
+
+  /** Additional metadata */
+  meta: z.record(z.string(), z.unknown()).optional()
+});
+
+export type ScopedScope = z.infer<typeof ScopedScopeSchema>;
+==== END ====
+
+==== FILE: src/schemas/scoped-slices.ts (LOC 74) ====
+import { z } from 'zod';
+
+/**
+ * Schema for scoped/20-slices.ndjson - Code ranges with optional bodies
+ * Each line is a JSON object representing one code slice
+ */
+export const ScopedSliceSchema = z.object({
+  /** File path relative to project root (POSIX style) */
+  path: z.string(),
+
+  /** Start line number (1-based) */
+  startLine: z.number().int().positive(),
+
+  /** End line number (1-based, inclusive) */
+  endLine: z.number().int().positive(),
+
+  /** Start character offset in file (0-based) */
+  startChar: z.number().int().nonnegative(),
+
+  /** End character offset in file (0-based, exclusive) */
+  endChar: z.number().int().nonnegative(),
+
+  /** Reasons for including this slice */
+  reasons: z.array(z.string()),
+
+  /** Symbol ID that this slice represents */
+  symbolId: z.string().optional(),
+
+  /** Symbol name */
+  symbolName: z.string().optional(),
+
+  /** Symbol kind */
+  symbolKind: z.string().optional(),
+
+  /** JSDoc comment associated with this slice */
+  doc: z.string().optional(),
+
+  /** Code body (only present when allowCodeBodies is true) */
+  body: z.string().optional(),
+
+  /** Context lines included */
+  context: z.object({
+    /** Lines before the symbol */
+    before: z.number().int().nonnegative(),
+    /** Lines after the symbol */
+    after: z.number().int().nonnegative()
+  }),
+
+  /** Whether this slice was merged with others */
+  merged: z.boolean().optional(),
+
+  /** Original slices that were merged into this one */
+  mergedFrom: z.array(z.object({
+    startLine: z.number().int().positive(),
+    endLine: z.number().int().positive(),
+    symbolId: z.string()
+  })).optional(),
+
+  /** Token count estimate for this slice */
+  tokens: z.object({
+    conservative: z.number().int().nonnegative(),
+    optimistic: z.number().int().nonnegative(),
+    average: z.number().int().nonnegative()
+  }).optional(),
+
+  /** Additional metadata */
+  meta: z.record(z.string(), z.unknown()).optional()
+});
+
+export type ScopedSlice = z.infer<typeof ScopedSliceSchema>;
+
+/**
+ * Schema for the entire NDJSON file (array of slices for validation)
+ */
+export const ScopedSlicesSchema = z.array(ScopedSliceSchema);
+==== END ====
+
+==== FILE: src/schemas/scoped-stubs.ts (LOC 75) ====
+import { z } from 'zod';
+
+/**
+ * Schema for scoped/30-stubs.d.ts - TypeScript declaration file
+ * This is a text artifact, so we use a simple string schema with validation
+ */
+export const ScopedStubsSchema = z.string().refine(
+  (content) => {
+    // Basic validation that this looks like a TypeScript declaration file
+    if (!content.trim()) {
+      return true; // Allow empty stubs
+    }
+
+    // Check for basic TypeScript declaration syntax
+    const hasValidSyntax =
+      content.includes('declare') ||
+      content.includes('export') ||
+      content.includes('interface') ||
+      content.includes('type') ||
+      content.includes('namespace');
+
+    if (!hasValidSyntax) {
+      return false;
+    }
+
+    // Check for obvious syntax errors (very basic)
+    const openBraces = (content.match(/{/g) || []).length;
+    const closeBraces = (content.match(/}/g) || []).length;
+
+    // Allow slight mismatch in case of incomplete stubs, but flag major issues
+    const braceDiff = Math.abs(openBraces - closeBraces);
+    if (braceDiff > 2) {
+      return false;
+    }
+
+    return true;
+  },
+  {
+    message: "Content does not appear to be valid TypeScript declarations"
+  }
+);
+
+/**
+ * Metadata schema for the stub generation process (not part of the file content)
+ * This could be used internally for validation but isn't part of the actual artifact
+ */
+export const ScopedStubsMetaSchema = z.object({
+  /** Number of external packages stubbed */
+  externalPackages: z.number().int().nonnegative(),
+
+  /** Number of internal symbols stubbed */
+  internalSymbols: z.number().int().nonnegative(),
+
+  /** List of stubbed packages */
+  packages: z.array(z.string()),
+
+  /** List of stubbed internal symbols */
+  symbols: z.array(z.object({
+    name: z.string(),
+    kind: z.string(),
+    path: z.string(),
+    reason: z.string()
+  })),
+
+  /** Generation timestamp */
+  generatedAt: z.string().datetime(),
+
+  /** Whether stubs were tested for compilation */
+  compilationTested: z.boolean(),
+
+  /** TypeScript version used for stub generation */
+  tsVersion: z.string().optional()
+});
+
+export type ScopedStubs = z.infer<typeof ScopedStubsSchema>;
+export type ScopedStubsMeta = z.infer<typeof ScopedStubsMetaSchema>;
+==== END ====
+
+==== FILE: src/schemas/scoped-symbol-graph.ts (LOC 97) ====
+import { z } from 'zod';
+
+/**
+ * Schema for scoped/10-symbol-graph.json - Nodes and edges for the scoped dependency graph
+ */
+export const ScopedSymbolGraphSchema = z.object({
+  /** Symbol nodes in the dependency graph */
+  nodes: z.array(z.object({
+    /** Unique symbol identifier */
+    id: z.string(),
+    /** Symbol kind */
+    kind: z.enum([
+      'function', 'class', 'interface', 'type', 'enum', 'var', 'const',
+      'method', 'property', 'constructor', 'getter', 'setter',
+      'namespace', 'module', 'default'
+    ] as const),
+    /** File path relative to project root */
+    path: z.string(),
+    /** Symbol name */
+    name: z.string(),
+    /** Line number in source file */
+    line: z.number().int().positive().optional(),
+    /** Column number in source file */
+    column: z.number().int().nonnegative().optional(),
+    /** Whether this is an external symbol (from node_modules) */
+    isExternal: z.boolean().optional(),
+    /** Package name for external symbols */
+    package: z.string().optional(),
+    /** Whether this symbol was included in slices */
+    included: z.boolean(),
+    /** Reason for inclusion/exclusion */
+    reason: z.array(z.string()),
+    /** Additional metadata */
+    meta: z.record(z.string(), z.unknown()).optional()
+  })),
+
+  /** Dependency edges between symbols */
+  edges: z.array(z.object({
+    /** Source symbol ID */
+    from: z.string(),
+    /** Target symbol ID */
+    to: z.string(),
+    /** Edge type */
+    type: z.enum([
+      'calls', 'isCalledBy', 'typeRef', 'extends', 'implements',
+      'imports', 'sameFileSibling', 'testCovers', 'docMentions'
+    ] as const),
+    /** Edge weight for ranking */
+    weight: z.number().positive(),
+    /** Reason for this edge */
+    reason: z.string(),
+    /** Optional metadata */
+    meta: z.record(z.string(), z.unknown()).optional()
+  })),
+
+  /** Graph ranking configuration */
+  ranking: z.object({
+    /** Ranking algorithm used */
+    algorithm: z.enum(['weighted-bfs', 'pagerank', 'manual'] as const),
+    /** Maximum graph depth explored */
+    maxDepth: z.number().int().positive(),
+    /** Edge weight configuration version */
+    weights: z.record(z.string(), z.number().positive()),
+    /** Stop conditions that were applied */
+    stopConditions: z.object({
+      /** Token budget exhausted */
+      budgetExhausted: z.boolean(),
+      /** Maximum depth reached */
+      maxDepthReached: z.boolean(),
+      /** Maximum files limit reached */
+      maxFilesReached: z.boolean(),
+      /** Manual stop condition */
+      manual: z.boolean()
+    })
+  }),
+
+  /** Graph statistics */
+  stats: z.object({
+    /** Total nodes discovered */
+    totalNodes: z.number().int().nonnegative(),
+    /** Total edges discovered */
+    totalEdges: z.number().int().nonnegative(),
+    /** Nodes included in output */
+    includedNodes: z.number().int().nonnegative(),
+    /** Nodes converted to stubs */
+    stubbedNodes: z.number().int().nonnegative(),
+    /** Files touched */
+    filesTouched: z.number().int().nonnegative(),
+    /** External packages referenced */
+    externalPackages: z.array(z.string()),
+    /** Whether the graph contains cycles */
+    hasCycles: z.boolean(),
+    /** Strongly connected component count */
+    sccCount: z.number().int().nonnegative().optional()
+  })
+});
+
+export type ScopedSymbolGraph = z.infer<typeof ScopedSymbolGraphSchema>;
+==== END ====
+
+==== FILE: src/schemas/zod-schemas.ts (LOC 228) ====
+import { z } from 'zod';
+import { ScopedScopeSchema } from './scoped-scope.js';
+import { ScopedSymbolGraphSchema } from './scoped-symbol-graph.js';
+import { ScopedSlicesSchema } from './scoped-slices.js';
+import { ScopedStubsSchema } from './scoped-stubs.js';
+import { ScopedIndexSchema } from './scoped-index.js';
+
+// Base schemas
+export const PackMetadataSchema = z.object({
+  specVersion: z.string(),
+  generator: z.object({
+    name: z.string(),
+    version: z.string()
+  }),
+  createdAt: z.string().datetime(),
+  preset: z.string(),
+  riskProfile: z.enum(['safe', 'normal', 'extended', 'minimal'] as const),
+  level: z.enum(['summary', 'contracts', 'full-api', 'deep'] as const),
+  budgets: z.object({
+    targetBytes: z.number().int().positive(),
+    actualBytes: z.number().int().nonnegative()
+  }),
+  git: z.object({
+    commit: z.string().optional(),
+    branch: z.string().optional(),
+    isDirty: z.boolean().optional()
+  }).optional(),
+  downsampling: z.array(z.object({
+    artifactId: z.string(),
+    reason: z.string(),
+    originalCount: z.number().int().nonnegative(),
+    finalCount: z.number().int().nonnegative(),
+    strategy: z.string()
+  })),
+  meta: z.record(z.string(), z.unknown()).optional()
+});
+
+export const FileInfoSchema = z.object({
+  path: z.string(),
+  bytes: z.number().int().nonnegative(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/, 'Invalid SHA-256 hash format'),
+  loc: z.number().int().nonnegative(),
+  kind: z.enum(['code', 'config', 'test', 'asset', 'docs'] as const),
+  bucket: z.enum(['public', 'internal', 'unknown'] as const),
+  ignoreReason: z.string().optional()
+});
+
+export const RepoTopologySchema = z.object({
+  packages: z.array(z.object({
+    name: z.string(),
+    dir: z.string(),
+    private: z.boolean().optional(),
+    type: z.enum(['module', 'commonjs'] as const).optional(),
+    bin: z.record(z.string(), z.string()).optional(),
+    exports: z.record(z.string(), z.unknown()).optional(),
+    main: z.string().optional(),
+    module: z.string().optional(),
+    dependencies: z.object({
+      internal: z.array(z.string()),
+      external: z.array(z.string())
+    })
+  })),
+  workspaces: z.array(z.object({
+    root: z.string(),
+    packages: z.array(z.string())
+  })),
+  lockfile: z.object({
+    type: z.enum(['pnpm', 'yarn', 'npm', 'none'] as const),
+    path: z.string().optional()
+  })
+});
+
+export const ImportGraphSchema = z.object({
+  nodes: z.array(z.object({
+    path: z.string(),
+    package: z.string().optional(),
+    kind: z.enum(['source', 'declaration', 'package'] as const)
+  })),
+  edges: z.array(z.object({
+    from: z.string(),
+    to: z.string(),
+    kind: z.enum(['import', 'export', 'reexport'] as const),
+    specifier: z.string()
+  })),
+  stats: z.object({
+    totalNodes: z.number().int().nonnegative(),
+    totalEdges: z.number().int().nonnegative(),
+    packages: z.number().int().nonnegative(),
+    stronglyConnectedComponents: z.number().int().nonnegative().optional(), // Deprecated
+    sccCount: z.number().int().nonnegative().optional(),
+    degrees: z.record(z.string(), z.object({
+      in: z.number().int().nonnegative(),
+      out: z.number().int().nonnegative()
+    })).optional(),
+    roots: z.array(z.string()).optional(),
+    leaves: z.array(z.string()).optional(),
+    isolatedNodes: z.array(z.string()).optional(),
+    internalEdges: z.number().int().nonnegative().optional(),
+    externalEdges: z.number().int().nonnegative().optional(),
+    hasCycles: z.boolean().optional(),
+    topExternalImports: z.array(z.tuple([
+      z.string(),
+      z.number().int().positive()
+    ])).optional(),
+    reachability: z.object({
+      seeds: z.array(z.string()),
+      reachable: z.array(z.string()),
+      reachabilityTruncated: z.boolean().optional()
+    }).optional()
+  }),
+  externalDeps: z.record(z.string(), z.array(z.string()))
+});
+
+export const TsConfigSchema = z.object({
+  configs: z.array(z.object({
+    name: z.string(),
+    dir: z.string(),
+    resolved: z.object({
+      compilerOptions: z.record(z.string(), z.unknown()).optional(),
+      include: z.array(z.string()).optional(),
+      exclude: z.array(z.string()).optional(),
+      files: z.array(z.string()).optional(),
+      extends: z.string().optional()
+    }),
+    delta: z.object({
+      strict: z.boolean().optional(),
+      target: z.string().optional(),
+      module: z.string().optional(),
+      moduleResolution: z.string().optional(),
+      verbatimModuleSyntax: z.boolean().optional(),
+      declaration: z.boolean().optional(),
+      declarationMap: z.boolean().optional(),
+      sourceMap: z.boolean().optional(),
+      esModuleInterop: z.boolean().optional(),
+      allowSyntheticDefaultImports: z.boolean().optional(),
+      noUncheckedIndexedAccess: z.boolean().optional(),
+      exactOptionalPropertyTypes: z.boolean().optional()
+    }).optional()
+  })),
+  summary: z.object({
+    totalConfigs: z.number().int().nonnegative(),
+    strictCount: z.number().int().nonnegative(),
+    esmCount: z.number().int().nonnegative(),
+    declarationCount: z.number().int().nonnegative(),
+    targetDistribution: z.record(z.string(), z.number().int().nonnegative()),
+    moduleDistribution: z.record(z.string(), z.number().int().nonnegative())
+  })
+});
+
+export const ExportsSchema = z.object({
+  files: z.array(z.object({
+    path: z.string(),
+    exports: z.array(z.object({
+      name: z.string(),
+      kind: z.enum(['function', 'class', 'type', 'interface', 'enum', 'var', 'default', 'reexport'] as const),
+      target: z.string().optional()
+    }))
+  }))
+});
+
+export const SchemaIndexSchema = z.object({
+  schemas: z.array(z.object({
+    path: z.string(),
+    framework: z.enum(['zod', 'yup', 'joi', 'ajv', 'custom'] as const).optional(),
+    exports: z.array(z.string())
+  }))
+});
+
+export const TypeMetricsSchema = z.object({
+  summary: z.object({
+    totalFiles: z.number().int().nonnegative(),
+    anyCount: z.number().int().nonnegative(),
+    unknownCount: z.number().int().nonnegative(),
+    neverCount: z.number().int().nonnegative(),
+    satisfiesCount: z.number().int().nonnegative(),
+    asConstCount: z.number().int().nonnegative(),
+    verbatimModuleSyntax: z.number().int().nonnegative()
+  }),
+  byFile: z.array(z.object({
+    path: z.string(),
+    anyCount: z.number().int().nonnegative(),
+    unknownCount: z.number().int().nonnegative(),
+    neverCount: z.number().int().nonnegative(),
+    satisfiesCount: z.number().int().nonnegative(),
+    asConstCount: z.number().int().nonnegative()
+  }))
+});
+
+export const DuplicationReportSchema = z.object({
+  clusters: z.array(z.object({
+    id: z.string(),
+    size: z.number().int().positive(),
+    totalBytes: z.number().int().positive(),
+    similarity: z.number().min(0).max(1),
+    representative: z.string(),
+    files: z.array(z.string())
+  })),
+  summary: z.object({
+    totalFiles: z.number().int().nonnegative(),
+    duplicatedFiles: z.number().int().nonnegative(),
+    duplicatedBytes: z.number().int().nonnegative(),
+    compressionRatio: z.number().min(0).max(1)
+  })
+});
+
+// Schema registry mapping schemaId to zod schema
+// Simple schema for text-based artifacts like .d.ts files
+export const TextArtifactSchema = z.string();
+
+export const SCHEMA_REGISTRY = {
+  '00-pack': PackMetadataSchema,
+  '10-repo-topology': RepoTopologySchema,
+  '20-files-manifest': FileInfoSchema,
+  '30-import-graph': ImportGraphSchema,
+  '40-duplication-report': DuplicationReportSchema,
+  'ts/50-tsconfigs': TsConfigSchema,
+  'ts/60-exports': ExportsSchema,
+  'ts/70-public-api': TextArtifactSchema,
+  'ts/80-schema-index': SchemaIndexSchema,
+  'ts/90-type-metrics': TypeMetricsSchema,
+  // Scoped pack schemas
+  'scoped/00-scope': ScopedScopeSchema,
+  'scoped/10-symbol-graph': ScopedSymbolGraphSchema,
+  'scoped/20-slices': ScopedSlicesSchema,
+  'scoped/30-stubs': ScopedStubsSchema,
+  'scoped/40-index': ScopedIndexSchema
+} as const;
+
+export type SchemaId = keyof typeof SCHEMA_REGISTRY;
+==== END ====
+
+==== SUMMARY ====
+Files: 6
+Total characters: 20860
+Estimated tokens: 5215
+==== END ====

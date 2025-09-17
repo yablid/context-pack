@@ -1,0 +1,1 @@
+{"included":true,"kind":"class","name":"BuildConfig","path":"src/types.ts","ranking":{"distance":0,"score":1000,"withinBudget":true},"reasons":["seed"],"slices":[{"end":141,"path":"src/types.ts","primary":true,"start":99}],"symbol":"src/types.ts#BuildConfig","tokens":{"average":0,"conservative":0,"optimistic":0}}

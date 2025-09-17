@@ -1,0 +1,532 @@
+==== DIRECTORY: src/detectors ====
+
+==== FILE: src/detectors/detector-registry.ts (LOC 171) ====
+import type { DetectorResult } from '../types.js';
+import { MonorepoDetector } from './monorepo-detector.js';
+import { LanguageDetector } from './language-detector.js';
+
+export interface DetectionContext {
+  rootPath: string;
+  verbose?: boolean;
+}
+
+export interface PresetResult {
+  name: string;
+  confidence: number;
+  monorepo?: DetectorResult;
+  language?: DetectorResult;
+  packageManager?: string;
+  metadata: Record<string, unknown>;
+}
+
+export class DetectorRegistry {
+  private monorepoDetector = new MonorepoDetector();
+  private languageDetector = new LanguageDetector();
+
+  async detectAll(context: DetectionContext): Promise<{
+    monorepos: DetectorResult[];
+    languages: DetectorResult[];
+    preset: PresetResult | null;
+  }> {
+    if (context.verbose) {
+      console.log(`Detecting ecosystems in: ${context.rootPath}`);
+    }
+
+    const [monorepos, languages] = await Promise.all([
+      this.monorepoDetector.detect(context.rootPath),
+      this.languageDetector.detect(context.rootPath)
+    ]);
+
+    if (context.verbose) {
+      console.log(`Found ${monorepos.length} monorepo indicators`);
+      console.log(`Found ${languages.length} language indicators`);
+    }
+
+    const preset = this.selectPreset(monorepos, languages);
+
+    return {
+      monorepos,
+      languages,
+      preset
+    };
+  }
+
+  private selectPreset(
+    monorepos: DetectorResult[], 
+    languages: DetectorResult[]
+  ): PresetResult | null {
+    // Sort by confidence (copy to avoid mutating inputs)
+    const topMonorepo = [...monorepos].sort((a, b) => b.confidence - a.confidence)[0];
+    const topLanguage = [...languages].sort((a, b) => b.confidence - a.confidence)[0];
+
+    if (!topMonorepo && !topLanguage) {
+      return null;
+    }
+
+    // TypeScript + pnpm (highest priority)
+    if (this.hasDetection(monorepos, 'pnpm-workspace') && 
+        this.hasDetection(languages, 'typescript')) {
+      return {
+        name: 'ts-pnpm',
+        confidence: 0.95,
+        monorepo: this.getDetection(monorepos, 'pnpm-workspace')!,
+        language: this.getDetection(languages, 'typescript')!,
+        packageManager: 'pnpm',
+        metadata: {
+          description: 'TypeScript monorepo with pnpm workspaces',
+          collectors: ['topology', 'import-graph', 'ts-config', 'exports', 'public-api', 'schema-index', 'type-metrics', 'duplication']
+        }
+      };
+    }
+
+    // TypeScript + npm/yarn
+    if (this.hasDetection(monorepos, 'npm-workspaces') && 
+        this.hasDetection(languages, 'typescript')) {
+      const monorepo = this.getDetection(monorepos, 'npm-workspaces')!;
+      return {
+        name: 'ts-npm',
+        confidence: 0.85,
+        monorepo,
+        language: this.getDetection(languages, 'typescript')!,
+        packageManager: monorepo.metadata?.lockfile as string || 'npm',
+        metadata: {
+          description: 'TypeScript monorepo with npm/yarn workspaces',
+          collectors: ['topology', 'import-graph', 'ts-config', 'exports', 'public-api', 'schema-index', 'type-metrics', 'duplication']
+        }
+      };
+    }
+
+    // Python + Poetry (future)
+    if (this.hasDetection(languages, 'python')) {
+      return {
+        name: 'py-poetry',
+        confidence: 0.7,
+        language: this.getDetection(languages, 'python')!,
+        packageManager: 'poetry',
+        metadata: {
+          description: 'Python project with Poetry',
+          collectors: ['topology', 'import-graph', 'py-config'],
+          status: 'not-implemented'
+        }
+      };
+    }
+
+    // Rust + Cargo (future)
+    if (this.hasDetection(languages, 'rust')) {
+      return {
+        name: 'rust-cargo',
+        confidence: 0.8,
+        language: this.getDetection(languages, 'rust')!,
+        packageManager: 'cargo',
+        metadata: {
+          description: 'Rust project with Cargo',
+          collectors: ['topology', 'rust-analyzer'],
+          status: 'not-implemented'
+        }
+      };
+    }
+
+    // Fallback to just TypeScript
+    if (topLanguage?.name === 'typescript') {
+      return {
+        name: 'ts-simple',
+        confidence: 0.6,
+        language: topLanguage,
+        packageManager: 'npm',
+        metadata: {
+          description: 'TypeScript project (non-monorepo)',
+          collectors: ['exports', 'public-api', 'type-metrics']
+        }
+      };
+    }
+
+    return null;
+  }
+
+  private hasDetection(results: DetectorResult[], name: string): boolean {
+    return results.some(r => r.name === name);
+  }
+
+  private getDetection(results: DetectorResult[], name: string): DetectorResult | undefined {
+    return results.find(r => r.name === name);
+  }
+
+  getAvailablePresets(): string[] {
+    return [
+      'ts-pnpm',
+      'ts-npm', 
+      'ts-simple',
+      'py-poetry',
+      'rust-cargo'
+    ];
+  }
+
+  getPresetDescription(preset: string): string {
+    const descriptions: Record<string, string> = {
+      'ts-pnpm': 'TypeScript monorepo with pnpm workspaces',
+      'ts-npm': 'TypeScript monorepo with npm/yarn workspaces',
+      'ts-simple': 'TypeScript project (non-monorepo)',
+      'py-poetry': 'Python project with Poetry (not implemented)',
+      'rust-cargo': 'Rust project with Cargo (not implemented)'
+    };
+
+    return descriptions[preset] || 'Unknown preset';
+  }
+}
+==== END ====
+
+==== FILE: src/detectors/language-detector.ts (LOC 211) ====
+import { readFile, access } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { DetectorResult } from '../types.js';
+
+export class LanguageDetector {
+  async detect(rootPath: string): Promise<DetectorResult[]> {
+    const results: DetectorResult[] = [];
+
+    // TypeScript detection
+    const tsResult = await this.detectTypeScript(rootPath);
+    if (tsResult) {
+      results.push(tsResult);
+    }
+
+    // Python detection
+    const pyResult = await this.detectPython(rootPath);
+    if (pyResult) {
+      results.push(pyResult);
+    }
+
+    // Rust detection
+    const rustResult = await this.detectRust(rootPath);
+    if (rustResult) {
+      results.push(rustResult);
+    }
+
+    // Go detection
+    const goResult = await this.detectGo(rootPath);
+    if (goResult) {
+      results.push(goResult);
+    }
+
+    return results;
+  }
+
+  private async detectTypeScript(rootPath: string): Promise<DetectorResult | null> {
+    let confidence = 0;
+    const metadata: Record<string, unknown> = {};
+
+    // Check for tsconfig.json
+    try {
+      await access(join(rootPath, 'tsconfig.json'));
+      confidence += 0.4;
+      metadata.hasRootTsConfig = true;
+
+      const content = await readFile(join(rootPath, 'tsconfig.json'), 'utf-8');
+      const tsConfig = JSON.parse(content);
+      
+      // Check for strict mode
+      if (tsConfig.compilerOptions?.strict) {
+        confidence += 0.1;
+        metadata.strict = true;
+      }
+      
+      // Check for ESM configuration
+      if (tsConfig.compilerOptions?.module === 'ESNext' || 
+          tsConfig.compilerOptions?.moduleResolution === 'Bundler') {
+        confidence += 0.1;
+        metadata.esm = true;
+      }
+    } catch {
+      // No root tsconfig, check for any tsconfig files
+      // This would be enhanced with a glob search in a real implementation
+    }
+
+    // Check package.json for TypeScript indicators
+    try {
+      const packageContent = await readFile(join(rootPath, 'package.json'), 'utf-8');
+      const packageJson = JSON.parse(packageContent);
+      
+      if (packageJson.type === 'module') {
+        confidence += 0.15;
+        metadata.packageType = 'module';
+      }
+      
+      if (packageJson.devDependencies?.typescript || packageJson.dependencies?.typescript) {
+        confidence += 0.2;
+        metadata.hasTypeScript = true;
+      }
+      
+      if (packageJson.devDependencies?.['@types/node']) {
+        confidence += 0.1;
+        metadata.hasNodeTypes = true;
+      }
+    } catch {
+      // package.json not found or invalid
+    }
+
+    // Must have some confidence to be valid
+    if (confidence > 0.2) {
+      return {
+        name: 'typescript',
+        confidence: Math.min(confidence, 0.95),
+        metadata
+      };
+    }
+
+    return null;
+  }
+
+  private async detectPython(rootPath: string): Promise<DetectorResult | null> {
+    let confidence = 0;
+    const metadata: Record<string, unknown> = {};
+
+    // Check for pyproject.toml
+    try {
+      await access(join(rootPath, 'pyproject.toml'));
+      confidence += 0.4;
+      metadata.hasProjectToml = true;
+    } catch {
+      // pyproject.toml not found
+    }
+
+    // Check for requirements.txt
+    try {
+      await access(join(rootPath, 'requirements.txt'));
+      confidence += 0.2;
+      metadata.hasRequirements = true;
+    } catch {
+      // requirements.txt not found
+    }
+
+    // Check for setup.py
+    try {
+      await access(join(rootPath, 'setup.py'));
+      confidence += 0.2;
+      metadata.hasSetupPy = true;
+    } catch {
+      // setup.py not found
+    }
+
+    // Check for Pipfile (Pipenv)
+    try {
+      await access(join(rootPath, 'Pipfile'));
+      confidence += 0.3;
+      metadata.hasPipfile = true;
+    } catch {
+      // Pipfile not found
+    }
+
+    if (confidence > 0.2) {
+      return {
+        name: 'python',
+        confidence: Math.min(confidence, 0.9),
+        metadata
+      };
+    }
+
+    return null;
+  }
+
+  private async detectRust(rootPath: string): Promise<DetectorResult | null> {
+    try {
+      await access(join(rootPath, 'Cargo.toml'));
+      
+      const metadata: Record<string, unknown> = {
+        hasCargoToml: true
+      };
+
+      // Check for workspace
+      try {
+        const content = await readFile(join(rootPath, 'Cargo.toml'), 'utf-8');
+        if (content.includes('[workspace]')) {
+          metadata.isWorkspace = true;
+        }
+      } catch {
+        // Could not read Cargo.toml
+      }
+
+      return {
+        name: 'rust',
+        confidence: 0.95,
+        metadata
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async detectGo(rootPath: string): Promise<DetectorResult | null> {
+    let confidence = 0;
+    const metadata: Record<string, unknown> = {};
+
+    // Check for go.mod
+    try {
+      await access(join(rootPath, 'go.mod'));
+      confidence += 0.5;
+      metadata.hasGoMod = true;
+    } catch {
+      // go.mod not found
+    }
+
+    // Check for go.work (Go workspaces)
+    try {
+      await access(join(rootPath, 'go.work'));
+      confidence += 0.4;
+      metadata.hasGoWork = true;
+    } catch {
+      // go.work not found
+    }
+
+    if (confidence > 0.3) {
+      return {
+        name: 'go',
+        confidence: Math.min(confidence, 0.9),
+        metadata
+      };
+    }
+
+    return null;
+  }
+}
+==== END ====
+
+==== FILE: src/detectors/monorepo-detector.ts (LOC 131) ====
+import { readFile, access } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { DetectorResult } from '../types.js';
+
+export class MonorepoDetector {
+  async detect(rootPath: string): Promise<DetectorResult[]> {
+    const results: DetectorResult[] = [];
+
+    // Check for pnpm workspace (highest priority)
+    try {
+      await access(join(rootPath, 'pnpm-workspace.yaml'));
+      const content = await readFile(join(rootPath, 'pnpm-workspace.yaml'), 'utf-8');
+      const packages = this.parsePnpmWorkspace(content);
+      
+      results.push({
+        name: 'pnpm-workspace',
+        confidence: 0.95,
+        metadata: { packages, lockfile: 'pnpm-lock.yaml' }
+      });
+    } catch {
+      // pnpm-workspace.yaml not found
+    }
+
+    // Check for npm/yarn workspaces in package.json
+    try {
+      const packagePath = join(rootPath, 'package.json');
+      await access(packagePath);
+      const packageContent = await readFile(packagePath, 'utf-8');
+      const packageJson = JSON.parse(packageContent);
+      
+      if (packageJson.workspaces) {
+        const packages = Array.isArray(packageJson.workspaces) 
+          ? packageJson.workspaces 
+          : packageJson.workspaces.packages || [];
+        
+        // Determine which lock file exists
+        let lockfile = 'package-lock.json';
+        let confidence = 0.8;
+        
+        try {
+          await access(join(rootPath, 'yarn.lock'));
+          lockfile = 'yarn.lock';
+          confidence = 0.85;
+        } catch {
+          // yarn.lock not found, stick with npm
+        }
+        
+        results.push({
+          name: 'npm-workspaces',
+          confidence,
+          metadata: { packages, lockfile }
+        });
+      }
+    } catch {
+      // package.json not found or invalid
+    }
+
+    // Check for Rush monorepo
+    try {
+      await access(join(rootPath, 'rush.json'));
+      const content = await readFile(join(rootPath, 'rush.json'), 'utf-8');
+      const rushConfig = JSON.parse(content);
+      const packages = rushConfig.projects?.map((p: any) => p.packageName) || [];
+      
+      results.push({
+        name: 'rush',
+        confidence: 0.9,
+        metadata: { packages, tool: 'rush' }
+      });
+    } catch {
+      // rush.json not found
+    }
+
+    // Check for Turbo config (can coexist with other monorepo tools)
+    try {
+      await access(join(rootPath, 'turbo.json'));
+      results.push({
+        name: 'turbo',
+        confidence: 0.7,
+        metadata: { tool: 'turbo' }
+      });
+    } catch {
+      // turbo.json not found
+    }
+
+    // Check for Lerna
+    try {
+      await access(join(rootPath, 'lerna.json'));
+      const content = await readFile(join(rootPath, 'lerna.json'), 'utf-8');
+      const lernaConfig = JSON.parse(content);
+      const packages = lernaConfig.packages || [];
+      
+      results.push({
+        name: 'lerna',
+        confidence: 0.75,
+        metadata: { packages, tool: 'lerna' }
+      });
+    } catch {
+      // lerna.json not found
+    }
+
+    return results;
+  }
+
+  private parsePnpmWorkspace(content: string): string[] {
+    // Simple YAML parsing for packages array
+    const lines = content.split('\n');
+    const packages: string[] = [];
+    let inPackagesSection = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      
+      if (trimmed === 'packages:') {
+        inPackagesSection = true;
+        continue;
+      }
+      
+      if (inPackagesSection) {
+        if (trimmed.startsWith('- ')) {
+          const packagePath = trimmed.substring(2).replace(/['"]/g, '');
+          packages.push(packagePath);
+        } else if (!trimmed.startsWith(' ') && trimmed !== '') {
+          // End of packages section
+          break;
+        }
+      }
+    }
+
+    return packages;
+  }
+}
+==== END ====
+
+==== SUMMARY ====
+Files: 3
+Total characters: 14244
+Estimated tokens: 3561
+==== END ====

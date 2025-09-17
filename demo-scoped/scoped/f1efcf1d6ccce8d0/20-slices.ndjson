@@ -1,0 +1,1 @@
+{"context":{"after":3,"before":3},"endChar":3115,"endLine":134,"path":"src/types.ts","reasons":["seed"],"startChar":2322,"startLine":99,"symbolId":"src/types.ts#BuildConfig","symbolKind":"class","symbolName":"BuildConfig","tokens":{"average":0,"conservative":0,"optimistic":0}}

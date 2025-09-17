@@ -1,10 +1,11 @@
 # Context Pack CLI
 
-**Production-Ready** deterministic CLI for creating language-aware context packs of codebases—safe to share publicly, rich enough for architectural reviews, refactors, and API surface audits.
+**Production-Ready** deterministic CLI for creating language-aware context packs of codebases—safe to share publicly, rich enough for architectural reviews, refactors, and API surface audits. Now with **symbol-level context extraction** for coding agents.
 
 ## Features
 
-- **Safe by design**: No source code bodies, no secrets, only metadata (hashes, counts, names, and schema information)
+- **Safe by design**: No source code bodies by default, no secrets, only metadata (hashes, counts, names, and schema information)
+- **Symbol-level context**: Extract focused code slices around specific functions, classes, or interfaces with `--scope`
 - **Deterministic output**: Same inputs → identical outputs across runs
 - **High performance**: Concurrent collectors with bounded concurrency (default: 3 simultaneous)
 - **Smart file handling**: Peek-based binary detection, optional hashing with size limits, full .gitignore support
@@ -21,6 +22,9 @@ pnpm link --global
 
 # Generate a context pack for current directory
 context-pack .
+
+# Extract symbol-level context for coding agents
+context-pack . --scope src/types.ts#BuildConfig --scope-allow-code
 
 # Detect ecosystem and available collectors
 context-pack detect .
@@ -75,6 +79,13 @@ Context packs are generated in three different sizes to optimize for different L
     30-import-graph.json    # Essential graph stats only
     50-tsconfigs.json       # Core compiler settings only
     60-exports.json         # Package exports (full)
+  scoped/                   # Symbol-level context (when --scope used)
+    <hash>/                 # Deterministic hash-based directory
+      00-scope.json         # Scoped pack metadata and configuration
+      10-symbol-graph.json  # Dependency graph around target symbol
+      20-slices.ndjson      # Code slices with context lines
+      30-stubs.d.ts         # TypeScript declarations for external types
+      40-index.ndjson       # Symbol → slice mapping
 ```
 
 ## Artifact Reference: What Each File Contains
@@ -139,6 +150,12 @@ Each artifact answers specific questions agents commonly need: "What depends on 
 - **`minimal/`** - Use for quick questions about exports, dependencies, or configuration—fits in any model's context window
 
 All three packs contain the same core insight (what functions/types are available, how modules connect, project configuration) but with different levels of detail to match your context budget.
+
+## Documentation
+
+- **[Context Packs Guide](docs/context-pack.md)** - Comprehensive guide to generating and using context packs
+- **[Scoped Packs Guide](docs/scoped.md)** - Symbol-level context extraction for coding agents
+- **[CLI Reference](docs/cli.md)** - Complete command-line interface documentation
 
 ## Performance & Configuration
 

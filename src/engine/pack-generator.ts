@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
-import type { PackMetadata, BuildConfig, DownsamplingDecision } from '../types.js';
-import { CanonicalJSON } from './canonical-json.js';
+import type { PackMetadata, BuildConfig, DownsamplingDecision } from '../core/types.js';
+import { CanonicalJSON } from '../core/io/canonical-json.js';
+import { getGitInfo } from '../utils/git-info.js';
 
 export class PackGenerator {
   private rootPath: string;
@@ -20,7 +20,7 @@ export class PackGenerator {
     meta?: Record<string, unknown>
   ): Promise<PackMetadata> {
     const packageJson = await this.getPackageInfo();
-    const gitInfo = await this.getGitInfo();
+    const gitInfo = await getGitInfo(this.rootPath);
 
     return {
       specVersion: '1.0.0',
@@ -62,30 +62,4 @@ export class PackGenerator {
     }
   }
 
-  private async getGitInfo(): Promise<{ commit?: string; branch?: string; isDirty?: boolean } | undefined> {
-    try {
-      const commit = execSync('git rev-parse HEAD', { 
-        cwd: this.rootPath, 
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'ignore']
-      }).trim();
-
-      const branch = execSync('git rev-parse --abbrev-ref HEAD', { 
-        cwd: this.rootPath, 
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'ignore']
-      }).trim();
-
-      const isDirty = execSync('git status --porcelain', { 
-        cwd: this.rootPath, 
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'ignore']
-      }).trim().length > 0;
-
-      return { commit, branch, isDirty };
-    } catch {
-      // Not a git repository or git not available
-      return undefined;
-    }
-  }
 }

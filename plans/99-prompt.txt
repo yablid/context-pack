@@ -1,0 +1,154 @@
+REFRACTOR MAP — Context‑Pack Suite (frozen 2025-09-17T08:51:26Z)
+
+Context signals (from your artifacts):
+- Roots: src/engine/context-pack-engine.ts (orchestrator, out=15)
+- Kernels (high fan-in): src/types.ts (in=22), src/engine/canonical-json.ts (in=11)
+- Orchestrators (high fan-out): src/engine/context-pack-engine.ts (out=15), src/scoped/packager.ts (out=15)
+- Re‑export hub: src/errors/index.ts (~27 re‑exports)
+
+Order of operations
+1) Break cycles (barrel + registry + cross‑feature edges)
+2) Isolate kernels (types, canonical JSON) into core/
+3) Split orchestrators into thin feature drivers
+4) Gate/trim re‑exports
+5) Align folders to proposed core/features/formatters shape
+6) Re‑run graph invariants and golden outputs
+
+STEP 1 — Break cycles
+Intent
+- Ensure a DAG across layers: core → features → CLI. No reverse edges.
+
+Edges to cut (ban + remove if present)
+- errors barrel:
+  src/errors/error-formatter.ts → src/errors/index.ts
+  src/errors/specific-errors.ts → src/errors/index.ts
+  src/errors/error-codes.ts → src/errors/index.ts
+  (Replace barrel imports with direct relative imports)
+- collector registry:
+  src/collectors/** → src/collectors/collector-registry.ts
+  (Collectors must not import the registry that imports them)
+- cross‑feature:
+  src/scoped/** → src/engine/context-pack-engine.ts
+  src/features/** → src/scoped/packager.ts
+  (Features must not import each other; depend only on core/*)
+- util↔errors:
+  src/utils/** → src/errors/index.ts
+  (Utils should not depend on errors barrel; import concrete types or use Result/Either in types.ts)
+
+Mechanical changes
+- Search & replace imports of "src/errors/index" in error‑formatter/specific‑errors/error‑codes with explicit file imports.
+- Move shared services out of orchestrators to core (see Step 2) and update scoped/* to target core APIs.
+
+Risks
+- Hidden circular type imports; barrel removal can increase import lines.
+- Minor churn in import paths.
+
+DoD / Tests
+- Graph: hasCycles=false or SCC count decreases; no edges matching banned patterns.
+- Build: tsc clean; unit tests green.
+- Golden text artifacts unchanged (except import ordering).
+
+STEP 2 — Isolate kernels into core/
+Intent
+- Kernels should have in>>out and live in core with zero outward deps.
+
+File moves (before → after)
+- src/types.ts → src/core/types.ts
+- src/engine/canonical-json.ts → src/core/io/canonical-json.ts
+- src/engine/schema-validator.ts → src/core/validation/schema-validator.ts
+- src/schemas/zod-schemas.ts → src/core/validation/zod-schemas.ts
+- src/utils/token-counter.ts → src/core/tokens/token-counter.ts
+- src/engine/budget-manager.ts → src/core/tokens/budget-manager.ts
+- src/utils/path-validator.ts → src/core/security/path-validator.ts
+- src/utils/secret-redaction.ts → src/core/security/secret-redaction.ts
+
+Risks
+- Wide import ripples. Keep barrel‑less to avoid re‑introducing cycles.
+
+DoD / Tests
+- Kernels have out=0 (or only to node libs); build + golden packs stable.
+
+STEP 3 — Split orchestrators
+Intent
+- Convert fat orchestrators into thin drivers over core services.
+
+Context Pack
+- src/engine/context-pack-engine.ts → split into:
+  src/features/context-pack/plan.ts
+  src/features/context-pack/run.ts
+  src/features/context-pack/emit.ts
+- Public API: runContextPack(config): Promise<Artifacts>
+
+Scoped Pack
+- src/scoped/packager.ts → split into:
+  src/features/scoped-pack/plan.ts
+  src/features/scoped-pack/slice.ts
+  src/features/scoped-pack/emit.ts
+
+Explicit edge cuts from split
+- src/features/context-pack/* must not import src/features/scoped-pack/* (and vice‑versa).
+
+DoD / Tests
+- Orchestrators’ fan‑out reduced (>30%). Unit tests for plan/run/emit seams.
+
+STEP 4 — Gate & trim re‑exports
+Intent
+- Avoid “barrel cycles” and reduce surface area.
+
+Changes
+- Replace src/errors/index.ts with src/errors/public.ts exposing only:
+  { BaseError, ErrorCategory, exitCodeForCategory, formatError, SchemaValidationError }
+- Update all consumers to import from errors/public.
+- Delete any re‑exports of formatter/registry symbols from the errors hub.
+
+Edge cuts
+- {errors submodules} → errors/public (no import of public from submodules).
+
+DoD / Tests
+- No module imports errors/index.ts. Re‑export count reduced by >=50%.
+
+STEP 5 — Folder alignment to proposed shape
+Moves (before → after)
+- src/engine/file-walker.ts → src/core/file-walker/index.ts
+- src/engine/ts-program-service.ts → src/core/ts-program/service.ts
+- src/engine/pack-generator.ts → src/features/context-pack/pack-generator.ts
+- src/collectors/** → src/features/context-pack/collectors/**
+- src/detectors/** → src/features/context-pack/detectors/**
+- src/scoped/** (graph-builder|ranker|slicer|stubber) → src/features/scoped-pack/{graph,rank,slice,stub}/**
+
+DoD / Tests
+- Programmatic API unchanged; CLI thin wrapper compiles; golden outputs byte‑identical.
+
+STEP 6 — Verification & invariants
+Checks
+- Import graph constraints (lint or CI step):
+  - Disallow: features/** → features/** (except formatters)
+  - Disallow: ** → errors/public from inside errors/**
+  - Disallow: collectors/** → collector-registry.ts
+- Recompute graph stats; record: roots, leaves, top fan‑in/out.
+- Ensure sccCount==0 (or strictly less than baseline) and orchestrator fan‑out reduced.
+
+Cut‑List (summary)
+- Ban edges:
+  collectors/** → collectors/collector-registry.ts
+  scoped/** → engine/context-pack-engine.ts
+  features/** ↔ features/** (cross‑feature)
+  errors/{error-formatter,specific-errors,error-codes}.ts → errors/index.ts
+  utils/** → errors/index.ts
+
+Move‑List (summary)
+- Types/validation/tokens/security/io to core/*
+- Orchestrators to features/{context-pack,scoped-pack}/*
+- Walkers/ts‑program to core/*
+- Collectors/detectors under features/context-pack/*
+- Scoped helpers under features/scoped-pack/*
+
+Risk register
+- Import churn; mitigate with codemods.
+- Hidden test imports pulling features into core; audit test utilities.
+
+Definition of Done (global)
+- Graph invariants pass; cycles removed; fan‑out down.
+- All commands honor structured exit codes.
+- Golden tests: exact text output for formatters.
+- Docs updated: architecture + user guides.

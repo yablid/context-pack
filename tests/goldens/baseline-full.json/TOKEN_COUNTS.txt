@@ -1,0 +1,14 @@
+Context Pack Token Estimates
+============================
+
+Full pack: ~29,650 tokens (range: 37,062-22,237)
+Short pack: ~20,555 tokens (range: 25,693-15,416)
+Minimal pack: ~9,058 tokens (range: 11,321-6,793)
+
+Pack Contents:
+- full/: Complete analysis (all artifacts + TypeScript subdirectory)
+- short/: Essential structure (topology, manifest, filtered import-graph, tsconfig, exports)
+- minimal/: Quick context (filtered import-graph, tsconfig, exports only)
+
+Token estimates are approximate and vary by model tokenizer.
+Conservative estimates assume ~3 chars/token, optimistic assume ~5 chars/token.

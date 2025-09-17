@@ -1,21 +1,6 @@
-import type { Artifact, CollectorRunResult, CollectorHealth } from '../types.js';
+import type { Artifact, CollectorRunResult, CollectorHealth } from '../core/types.js';
+import type { Collector, CollectorContext } from '../core/contracts/collector.js';
 import { CollectorTimeoutError } from '../errors/specific-errors.js';
-
-export interface CollectorContext {
-  rootPath: string;
-  packages: string[];
-  files: { path: string }[];
-  budgetHint: number;
-  riskProfile: string;
-  verbose?: boolean;
-  timeout?: number;
-  memoryLimitMB?: number;
-}
-
-export interface Collector {
-  name: string;
-  collect(ctx: CollectorContext): Promise<Artifact[]>;
-}
 
 export class CollectorRunner {
   static async runCollectors(

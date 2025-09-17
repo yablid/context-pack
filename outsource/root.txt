@@ -1,0 +1,442 @@
+==== DIRECTORY: src (root files only) ====
+
+==== FILE: src/cli.ts (LOC 270) ====
+#!/usr/bin/env node
+
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+// Get package version
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const packageJson = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'));
+
+// Exit codes for agent workflows
+const EXIT_CODES = {
+  SUCCESS: 0,
+  GENERIC_ERROR: 1,
+  INVALID_ARGS: 2,
+  VALIDATION_FAILED: 3,
+  BUDGET_EXCEEDED: 4,
+  COLLECTOR_FAILURE: 5
+} as const;
+
+interface CLIArgs {
+  path: string;
+  preset: string;
+  level: 'summary' | 'contracts' | 'full-api' | 'deep';
+  budgetBytes: number;
+  riskProfile: 'safe' | 'normal' | 'extended' | 'minimal';
+  packages?: string[];
+  exclude?: string[];
+  out: string;
+  format: 'json' | 'ndjson';
+  verbose: boolean;
+  strict: boolean;
+  validateSchemas: boolean;
+  validateOnly: boolean;
+  deterministic: boolean;
+  hashFiles: boolean;
+  maxHashFileSizeMB: number;
+  concurrency: number;
+  // Scoped pack args
+  scope?: string;
+  scopeAllowCode: boolean;
+  scopeBudget: number;
+  scopeMode: 'static' | 'hybrid';
+  scopeInclude?: string[];
+  scopePlanOnly: boolean;
+  // Agent-friendly output
+  printJson: boolean;
+  print?: 'slices' | 'graph' | 'scope' | 'index';
+  emitPrompt: boolean;
+}
+
+function parseArgs(): CLIArgs {
+  const args = process.argv.slice(2);
+
+  // Show help
+  if (args.includes('--help') || args.includes('-h')) {
+    showHelp();
+    process.exit(0);
+  }
+
+  // Show version
+  if (args.includes('--version') || args.includes('-v')) {
+    console.log(packageJson.version);
+    process.exit(0);
+  }
+
+  // TODO: Handle subcommands later
+  // if (args[0] === 'detect') {
+  //   return handleDetectCommand(args.slice(1));
+  // }
+
+  // Main generate command
+  const path = args.find(arg => !arg.startsWith('--')) || '.';
+
+  const getFlag = (name: string): boolean => args.includes(`--${name}`);
+  const getValue = (name: string, defaultValue: string): string => {
+    const flag = args.find(arg => arg.startsWith(`--${name}=`));
+    if (flag) return flag.split('=')[1];
+
+    const flagIndex = args.findIndex(arg => arg === `--${name}`);
+    if (flagIndex >= 0 && flagIndex < args.length - 1) {
+      return args[flagIndex + 1];
+    }
+
+    return defaultValue;
+  };
+
+  const getNumber = (name: string, defaultValue: number): number => {
+    const value = getValue(name, String(defaultValue));
+    const parsed = parseInt(value);
+    return isNaN(parsed) ? defaultValue : parsed;
+  };
+
+  const getArray = (name: string): string[] | undefined => {
+    const value = getValue(name, '');
+    return value ? value.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+  };
+
+  const result = {
+    path,
+    preset: getValue('preset', 'ts-pnpm'),
+    level: getValue('level', 'contracts') as CLIArgs['level'],
+    budgetBytes: getNumber('budget', getNumber('budget-bytes', 1500000)),
+    riskProfile: getValue('risk-profile', getValue('risk', 'safe')) as CLIArgs['riskProfile'],
+    packages: getArray('packages'),
+    exclude: getArray('exclude'),
+    out: getValue('out', './.contextpack'),
+    format: getValue('format', 'json') as CLIArgs['format'],
+    verbose: getFlag('verbose'),
+    strict: getFlag('strict'),
+    validateSchemas: !getFlag('no-validate'),
+    validateOnly: getFlag('validate-only'),
+    deterministic: !getFlag('no-deterministic'),
+    hashFiles: !getFlag('no-hash-files'),
+    maxHashFileSizeMB: getNumber('max-hash-file-size', 10),
+    concurrency: getNumber('concurrency', 3),
+    // Scoped pack flags
+    scope: getValue('scope', '').trim() || undefined,
+    scopeAllowCode: getFlag('scope-allow-code'),
+    scopeBudget: getNumber('scope-budget', 20000),
+    scopeMode: getValue('scope-mode', 'static') as CLIArgs['scopeMode'],
+    scopeInclude: getArray('scope-include'),
+    scopePlanOnly: getFlag('scope-plan-only'),
+    // Agent-friendly output flags
+    printJson: getFlag('print-json'),
+    print: (getValue('print', '').trim() || undefined) as CLIArgs['print'],
+    emitPrompt: getFlag('emit-prompt')
+  };
+
+  // Validate --print argument
+  const parsed = getValue('print', '').trim();
+  if (parsed && !['slices', 'graph', 'scope', 'index'].includes(parsed)) {
+    console.error(`Invalid --print value: ${parsed}. Must be one of: slices, graph, scope, index`);
+    process.exit(EXIT_CODES.INVALID_ARGS);
+  }
+
+  return result;
+}
+
+function showHelp() {
+  console.log(`
+Context Pack CLI v${packageJson.version}
+
+USAGE:
+  context-pack <path>           Generate context pack for directory
+  context-pack detect <path>    Detect ecosystem and presets
+  context-pack validate <path>  Validate existing context pack
+  context-pack schema [id]      Show JSON schemas
+
+OPTIONS:
+  --preset <name>           Preset configuration (default: ts-pnpm)
+  --level <level>           Detail level: summary|contracts|full-api|deep (default: contracts)
+  --budget <bytes>          Maximum pack size in bytes (default: 1500000)
+  --risk-profile <profile>  Risk profile: safe|normal|extended|minimal (default: safe)
+  --packages <globs>        Limit to specific packages (comma-separated)
+  --exclude <globs>         Extra ignore patterns (comma-separated)
+  --out <dir>               Output directory (default: ./.contextpack)
+  --format <format>         Output format: json|ndjson (default: json)
+  --verbose                 Verbose output
+  --strict                  Strict mode - fail on validation errors
+  --no-validate             Disable schema validation
+  --validate-only           Only validate artifacts, do not generate pack
+  --no-deterministic        Disable deterministic output
+  --no-hash-files           Disable SHA-256 hashing of files
+  --max-hash-file-size <mb> Maximum file size to hash in MB (default: 10)
+  --concurrency <num>       Max concurrent collectors (default: 3)
+
+SCOPED PACK OPTIONS:
+  --scope <fqn>             Generate scoped pack for symbol (path#symbol)
+  --scope-allow-code        Allow code bodies in scoped pack (security risk)
+  --scope-budget <tokens>   Token budget for scoped pack (default: 20000)
+  --scope-mode <mode>       Analysis mode: static|hybrid (default: static)
+  --scope-include <list>    Include tests,docs (comma-separated)
+  --scope-plan-only         Generate scope and graph only (for budget planning)
+
+AGENT-FRIENDLY OUTPUT:
+  --print-json              Print artifact paths as JSON to stdout after success
+  --print <artifact>        Print specific artifact to stdout (slices|graph|scope|index)
+  --emit-prompt             Generate 99-prompt.txt for direct LLM consumption
+
+  -h, --help                Show this help
+  -v, --version             Show version
+
+EXAMPLES:
+  context-pack .
+  context-pack . --level summary --verbose
+  context-pack . --no-hash-files --preset ts-simple
+  context-pack detect .
+  context-pack validate ./.contextpack --strict
+
+SCOPED PACK EXAMPLES:
+  context-pack . --scope src/engine/engine.ts#createEngine
+  context-pack . --scope src/types.ts#BuildConfig --scope-allow-code
+  context-pack . --scope src/utils/helper.ts#line:42:10 --scope-budget 10000
+
+AGENT-FRIENDLY EXAMPLES:
+  context-pack . --scope src/types.ts#Config --print-json
+  context-pack . --scope src/api.ts#handleRequest --print slices
+  context-pack . --scope src/core.ts#processData --emit-prompt --scope-allow-code
+  context-pack . --scope src/big.ts#Complex --scope-plan-only --print-json
+`);
+}
+
+// TODO: Add subcommands back later
+
+// Main execution
+async function main() {
+  try {
+    const config = parseArgs();
+    console.log('Context Pack CLI v' + packageJson.version);
+
+    const { ContextPackEngine } = await import('./engine/context-pack-engine.js');
+
+    if (config.validateOnly) {
+      console.log('TODO: Implement validate-only mode');
+      return;
+    }
+
+    const buildConfig = {
+      level: config.level,
+      budgetBytes: config.budgetBytes,
+      riskProfile: config.riskProfile,
+      preset: config.preset,
+      packages: config.packages,
+      exclude: config.exclude,
+      deterministic: config.deterministic,
+      format: config.format,
+      verbose: config.verbose,
+      strict: config.strict,
+      validateSchemas: config.validateSchemas,
+      validateOnly: config.validateOnly,
+      out: config.out,
+      hashFiles: config.hashFiles,
+      maxHashFileSizeMB: config.maxHashFileSizeMB,
+      // Scope configuration
+      ...(config.scope && {
+        scope: {
+          seed: config.scope,
+          budgetTokens: config.scopeBudget,
+          budgetBytes: config.budgetBytes,
+          mode: config.scopeMode,
+          allowCodeBodies: config.scopeAllowCode,
+          include: {
+            tests: config.scopeInclude?.includes('tests'),
+            docs: config.scopeInclude?.includes('docs')
+          },
+          planOnly: config.scopePlanOnly
+        }
+      }),
+      // Agent-friendly output configuration
+      ...(config.printJson || config.print || config.emitPrompt ? {
+        agentOutput: {
+          printJson: config.printJson,
+          printArtifact: config.print,
+          emitPrompt: config.emitPrompt
+        }
+      } : {})
+    };
+
+    const engine = new ContextPackEngine(config.path, buildConfig);
+    await engine.generate();
+
+  } catch (error: any) {
+    const { formatError } = await import('./errors/error-formatter.js');
+    console.error(formatError(error));
+    process.exit(error.code || 1);
+  }
+}
+
+main();
+==== END ====
+
+==== FILE: src/types.ts (LOC 157) ====
+// Core types for the Context Pack system
+
+export interface Artifact {
+  id: string;
+  filename: string;
+  kind: 'json' | 'text';
+  schemaId: string;
+  sizeHint: number;
+  data?: unknown;
+  text?: string;
+}
+
+export interface PackMetadata {
+  specVersion: string;
+  generator: {
+    name: string;
+    version: string;
+  };
+  createdAt: string; // UTC ISO string
+  preset: string;
+  riskProfile: 'safe' | 'normal' | 'extended' | 'minimal';
+  level: 'summary' | 'contracts' | 'full-api' | 'deep';
+  budgets: {
+    targetBytes: number;
+    actualBytes: number;
+  };
+  git?: {
+    commit?: string;
+    branch?: string;
+    isDirty?: boolean;
+  };
+  downsampling: DownsamplingDecision[];
+  validation?: {
+    enabled: boolean;
+    stats: {
+      totalArtifacts: number;
+      validArtifacts: number;
+      errorCount: number;
+      warningCount: number;
+    };
+    failedCollectors?: string[];
+  };
+  health?: {
+    totalCollectors: number;
+    successful: number;
+    partial: number;
+    failed: number;
+    timeout: number;
+    skipped: number;
+    totalExecutionTime: number;
+    collectors: CollectorHealth[];
+  };
+  meta?: Record<string, unknown>;
+}
+
+export interface DownsamplingDecision {
+  artifactId: string;
+  reason: string;
+  originalCount: number;
+  finalCount: number;
+  strategy: string;
+}
+
+export interface FileInfo {
+  path: string; // POSIX-style relative path
+  bytes: number;
+  sha256: string;
+  loc: number; // lines of code, 0 for non-text files
+  kind: 'code' | 'config' | 'test' | 'asset' | 'docs';
+  bucket: 'public' | 'internal' | 'unknown';
+  ignoreReason?: string;
+}
+
+export interface CollectorContext {
+  rootPath: string;
+  packages: string[]; // workspace package directories
+  files: FileInfo[];
+  budgetHint: number; // suggested size budget for this collector
+  riskProfile: 'safe' | 'normal' | 'extended' | 'minimal';
+  verbose: boolean;
+}
+
+export interface Collector {
+  name: string;
+  detect(rootPath: string): Promise<boolean | number>; // boolean or confidence score 0-1
+  collect(context: CollectorContext): Promise<Artifact[]>;
+  schemaIds: string[]; // schemas this collector produces
+}
+
+export interface DetectorResult {
+  name: string;
+  confidence: number; // 0-1
+  metadata?: Record<string, unknown>;
+}
+
+export interface IgnoreRules {
+  gitignore: string[];
+  defaults: string[];
+  user: string[];
+}
+
+export interface BuildConfig {
+  level: 'summary' | 'contracts' | 'full-api' | 'deep';
+  budgetBytes: number;
+  riskProfile: 'safe' | 'normal' | 'extended' | 'minimal';
+  preset: string;
+  packages?: string[];
+  exclude?: string[];
+  deterministic: boolean;
+  format: 'json' | 'ndjson';
+  verbose: boolean;
+  strict: boolean;
+  validateSchemas: boolean;
+  validateOnly?: boolean;
+  out: string;
+  hashFiles?: boolean;
+  maxHashFileSizeMB?: number;
+  concurrency?: number;
+  // Scoped pack configuration
+  scope?: {
+    seed: string;
+    budgetTokens: number;
+    budgetBytes: number;
+    mode: 'static' | 'hybrid';
+    allowCodeBodies: boolean;
+    include?: {
+      tests?: boolean;
+      docs?: boolean;
+    };
+    planOnly?: boolean;
+  };
+  // Agent-friendly output configuration
+  agentOutput?: {
+    printJson?: boolean;
+    printArtifact?: 'slices' | 'graph' | 'scope' | 'index';
+    emitPrompt?: boolean;
+  };
+}
+
+export interface CollectorHealth {
+  name: string;
+  status: 'ok' | 'partial' | 'failed' | 'timeout' | 'skipped';
+  durationMs: number;
+  errorMessage?: string; // tests expect this
+  errorCode?: string;
+}
+
+export interface CollectorRunResult {
+  artifacts: Artifact[];
+  health: CollectorHealth;
+  success: boolean;
+  error?: any;
+}
+
+export interface CollectorExecutionContext extends CollectorContext {
+  timeout?: number; // milliseconds
+  memoryLimitMB?: number;
+}
+==== END ====
+
+==== SUMMARY ====
+Files: 2
+Total characters: 13120
+Estimated tokens: 3280
+==== END ====

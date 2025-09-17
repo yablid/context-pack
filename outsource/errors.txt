@@ -1,0 +1,374 @@
+==== DIRECTORY: src/errors ====
+
+==== FILE: src/errors/error-codes.ts (LOC 50) ====
+export type ErrorCategory =
+  | 'FileSystem'
+  | 'Validation'
+  | 'Configuration'
+  | 'Collector'
+  | 'Engine'
+  | 'Unknown';
+
+export interface RegisteredCode {
+  code: string;          // e.g., E102
+  category: ErrorCategory;
+  exitCode: number;
+}
+
+// Registry aligned with tests:
+// - E102 => Path traversal (FileSystem) => exit 3
+// - E202 => Collector timeout (Collector) => exit 5 (arbitrary, not asserted by tests)
+// Other codes can be extended as needed.
+export const CODE_REGISTRY: Record<string, RegisteredCode> = {
+  E101: { code: 'E101', category: 'FileSystem', exitCode: 3 },
+  E102: { code: 'E102', category: 'FileSystem', exitCode: 3 },
+  E103: { code: 'E103', category: 'FileSystem', exitCode: 3 },
+  E201: { code: 'E201', category: 'Collector', exitCode: 5 },
+  E202: { code: 'E202', category: 'Collector', exitCode: 5 },
+  E203: { code: 'E203', category: 'Collector', exitCode: 5 },
+  E301: { code: 'E301', category: 'Engine', exitCode: 4 },
+  E401: { code: 'E401', category: 'Validation', exitCode: 2 },
+  E701: { code: 'E701', category: 'Validation', exitCode: 2 },
+  E702: { code: 'E702', category: 'Validation', exitCode: 2 }
+};
+
+export function mapToRegisteredCode(e: { code?: string }): RegisteredCode {
+  if (e.code && CODE_REGISTRY[e.code]) return CODE_REGISTRY[e.code];
+  // Map common class names to expected codes
+  const name = (e as any)?.name as string | undefined;
+  if (name === 'PathTraversalError') return CODE_REGISTRY.E102;
+  if (name === 'PermissionDeniedError') return CODE_REGISTRY.E103;
+  if (name === 'CollectorTimeoutError') return CODE_REGISTRY.E202;
+  if (name === 'BudgetError') return CODE_REGISTRY.E401;
+  if (name === 'InvalidLevelError') return CODE_REGISTRY.E702;
+  // Fallback
+  return { code: e.code || 'E000', category: 'Unknown', exitCode: 1 };
+}
+
+export function exitCodeForCategory(category: ErrorCategory): number {
+  switch (category) {
+    case 'FileSystem': return 3;
+    case 'Validation': return 2;
+    default: return 1;
+  }
+}
+==== END ====
+
+==== FILE: src/errors/error-formatter.ts (LOC 110) ====
+interface BaseErrorLike {
+  name?: string;
+  code?: string;
+  message: string;
+  details?: unknown;
+  suggestion?: string;
+  recoverable?: boolean;
+}
+import { mapToRegisteredCode, exitCodeForCategory, CODE_REGISTRY } from './error-codes.js';
+
+export interface FormattedIssue {
+  code: string;
+  message: string;
+  details?: unknown;
+  suggestion?: string;
+  recoverable?: boolean;
+}
+
+export type OutputMode = 'cli' | 'json';
+
+/**
+ * Error/Warn formatter used by CLI and tests.
+ * Tests expect:
+ *  - constructor accepting initial error array
+ *  - JSON output containing { status, errorCount, warningCount, errors, warnings }
+ *  - CLI output with emoji headers
+ */
+export class ErrorFormatter {
+  private errors: BaseErrorLike[] = [];
+  private warnings: BaseErrorLike[] = [];
+
+  constructor(initial?: BaseErrorLike[]) {
+    if (initial && initial.length) this.addErrors(initial);
+  }
+
+  addError(e: BaseErrorLike) { this.errors.push(e); }
+  addErrors(es: BaseErrorLike[]) { for (const e of es) this.addError(e); }
+  addWarning(w: BaseErrorLike) { this.warnings.push(w); }
+
+  hasCriticalErrors(): boolean {
+    return this.errors.some((e) => !e.recoverable);
+  }
+
+  getExitCode(): number {
+    if (this.errors.length === 0) return 0;
+    // Choose the "worst" exit code based on per-code exit codes
+    let maxExit = 1;
+    for (const error of this.errors) {
+      const registered = mapToRegisteredCode(error);
+      const exitCode = registered.exitCode ?? 1;
+      if (exitCode > maxExit) maxExit = exitCode;
+    }
+    return maxExit;
+  }
+
+  toJSON(): {
+    status: 'ok' | 'error';
+    errorCount: number;
+    warningCount: number;
+    errors: FormattedIssue[];
+    warnings: FormattedIssue[];
+  } {
+    return {
+      status: this.errors.length ? 'error' : 'ok',
+      errorCount: this.errors.length,
+      warningCount: this.warnings.length,
+      errors: this.errors.map(formatIssue),
+      warnings: this.warnings.map(formatIssue)
+    };
+  }
+
+  format(mode: OutputMode = 'cli'): string {
+    if (mode === 'json') {
+      return JSON.stringify(this.toJSON(), null, 2);
+    }
+    const j = this.toJSON();
+    const lines: string[] = [];
+    if (j.errorCount) lines.push(`❌ ${j.errorCount} error(s)`);
+    if (j.warningCount) lines.push(`⚠️ ${j.warningCount} warning(s)`);
+    for (const e of j.errors) {
+      lines.push(`  - [${e.code}] ${e.message}`);
+      if (e.suggestion) lines.push(`      💡 ${e.suggestion}`);
+    }
+    for (const w of j.warnings) {
+      lines.push(`  - [${w.code}] ${w.message}`);
+      if (w.suggestion) lines.push(`      💡 ${w.suggestion}`);
+    }
+    return lines.join('\n');
+  }
+}
+
+export function createFormatterFromResults(errors: BaseErrorLike[] = [], warnings: BaseErrorLike[] = []) {
+  const f = new ErrorFormatter(errors);
+  for (const w of warnings) f.addWarning(w);
+  return f;
+}
+
+export function formatError(e: BaseErrorLike, mode: OutputMode = 'cli'): string {
+  return new ErrorFormatter([e]).format(mode);
+}
+
+function formatIssue(e: BaseErrorLike): FormattedIssue {
+  const reg = mapToRegisteredCode(e);
+  return {
+    code: reg.code,
+    message: e.message,
+    details: e.details,
+    suggestion: e.suggestion,
+    recoverable: e.recoverable
+  };
+}
+==== END ====
+
+==== FILE: src/errors/index.ts (LOC 65) ====
+/**
+ * Context Pack Error System
+ * 
+ * Provides structured error handling with error codes, categories, and recovery information.
+ */
+
+// Error code registry
+export {
+  CODE_REGISTRY,
+  mapToRegisteredCode,
+  exitCodeForCategory,
+  type ErrorCategory,
+  type RegisteredCode
+} from './error-codes.js';
+
+// Base errors and types
+export {
+  BaseError,
+  type BaseErrorInit
+} from './specific-errors.js';
+
+// Specific error classes  
+export {
+  InvalidLevelError,
+  InvalidRiskProfileError,
+  BudgetError,
+  InvalidGlobPatternError,
+  InvalidPathArgumentError,
+  MutuallyExclusiveOptionsError,
+  ConflictingOptionsError,
+  PathTraversalError,
+  PathNotAccessibleError,
+  PermissionDeniedError,
+  SchemaValidationError,
+  CollectorTimeoutError,
+  CollectorMemoryLimitError,
+  InvalidPathCharactersError,
+  type ErrorContext
+} from './specific-errors.js';
+
+// Error formatter
+export {
+  ErrorFormatter,
+  createFormatterFromResults,
+  formatError,
+  type FormattedIssue,
+  type OutputMode
+} from './error-formatter.js';
+
+
+// Import for internal use
+import { BaseError } from './specific-errors.js';
+
+// Utility functions
+export function wrapError(error: unknown): BaseError {
+  if (error instanceof BaseError) {
+    return error;
+  }
+  
+  if (error instanceof Error) {
+    return new BaseError('E999', error.message, { details: { originalError: error.constructor.name, stack: error.stack } });
+  }
+  
+  const message = typeof error === 'string' ? error : String(error);
+  return new BaseError('E999', message, { details: { originalValue: error } });
+}
+==== END ====
+
+==== FILE: src/errors/specific-errors.ts (LOC 126) ====
+import { exitCodeForCategory, mapToRegisteredCode } from './error-codes.js';
+
+export interface BaseErrorInit {
+  recoverable?: boolean;
+  details?: unknown;
+  suggestion?: string;
+}
+
+/**
+ * Base error expected by tests: (code, message, opts?)
+ */
+export class BaseError extends Error {
+  code: string = 'E000';
+  recoverable: boolean = false;
+  details?: unknown;
+  suggestion?: string;
+
+  constructor(code: string, message: string, init: BaseErrorInit = {}) {
+    super(message);
+    this.name = this.constructor.name;
+    this.code = code;
+    if (init.recoverable !== undefined) this.recoverable = init.recoverable;
+    this.details = init.details;
+    this.suggestion = init.suggestion;
+  }
+
+  getExitCode(): number {
+    const registered = mapToRegisteredCode(this);
+    return registered.exitCode ?? exitCodeForCategory(registered.category);
+  }
+}
+
+export class InvalidLevelError extends BaseError {
+  constructor(level: string, allowed: string[]) {
+    super('E702', `Invalid detail level: "${level}". Allowed: ${allowed.join(', ')}`);
+  }
+}
+
+export class InvalidRiskProfileError extends BaseError {
+  constructor(risk: string, allowed: string[]) {
+    super('E301', `Invalid risk profile: "${risk}". Allowed: ${allowed.join(', ')}`);
+  }
+}
+
+export class BudgetError extends BaseError {
+  constructor(input: number | string, minBytes: number, maxBytes: number) {
+    const shown = typeof input === 'string' ? input : `${input}`;
+    super('E401', `Invalid budget size: ${shown}. Expected ${minBytes}–${maxBytes} bytes.`);
+    this.details = { input, minBytes, maxBytes };
+  }
+}
+
+export class InvalidGlobPatternError extends BaseError {
+  constructor(pattern: string, reason: string, ctx?: unknown) {
+    super('E301', `Invalid glob pattern "${pattern}": ${reason}`);
+    this.details = { pattern, reason, ctx };
+  }
+}
+
+export class InvalidPathArgumentError extends BaseError {
+  constructor(path: string) {
+    super('E301', `Invalid path argument: ${path}`);
+    this.details = { path };
+  }
+}
+
+export class MutuallyExclusiveOptionsError extends BaseError {
+  constructor(a: string, b: string) {
+    super('E301', `Options --${a} and --${b} are mutually exclusive`);
+  }
+}
+
+export class ConflictingOptionsError extends BaseError {
+  constructor(a: string, b: string) {
+    super('E301', `Options --${a} conflict with --${b}`);
+  }
+}
+
+export class PathTraversalError extends BaseError {
+  constructor(path: string, ctx?: unknown) {
+    // Tests expect E102 for traversal
+    super('E102', `Path traversal detected for "${path}"`, { details: ctx });
+  }
+}
+
+export class PathNotAccessibleError extends BaseError {
+  constructor(path: string, ctx?: unknown) {
+    super('E103', `Path not accessible: ${path}`, { details: ctx });
+  }
+}
+
+export class PermissionDeniedError extends BaseError {
+  constructor(path: string, op: string, ctx?: unknown) {
+    super('E103', `Permission denied (${op}) for: ${path}`, { details: ctx, recoverable: false });
+  }
+}
+
+export class SchemaValidationError extends BaseError {
+  constructor(artifactId: string, schemaId: string, validationErrors: string[]) {
+    super('E401', `Schema validation failed for ${artifactId} (${schemaId})`);
+    this.details = { artifactId, schemaId, validationErrors };
+  }
+}
+
+export class CollectorTimeoutError extends BaseError {
+  constructor(name: string, ms: number) {
+    super('E202', `Collector "${name}" timed out after ${ms}ms`);
+    this.details = { name, ms };
+  }
+}
+
+export class CollectorMemoryLimitError extends BaseError {
+  constructor(name: string, memMB: number, limitMB: number) {
+    super('E203', `Collector "${name}" exceeded memory limit: ${memMB}MB > ${limitMB}MB`);
+    this.details = { name, memMB, limitMB };
+  }
+}
+
+export class InvalidPathCharactersError extends BaseError {
+  constructor(path: string, invalidChars: string[]) {
+    super('E701', `Path contains invalid characters: ${path} (invalid: ${invalidChars.join(', ')})`);
+    this.details = { path, invalidChars };
+  }
+}
+
+// Export type for compatibility
+export type ErrorContext = Record<string, unknown>;
+==== END ====
+
+==== SUMMARY ====
+Files: 4
+Total characters: 10809
+Estimated tokens: 2702
+==== END ====

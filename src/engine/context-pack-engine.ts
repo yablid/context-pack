@@ -1,21 +1,21 @@
 import { writeFile, mkdir, access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import type { BuildConfig, FileInfo, Artifact, CollectorHealth } from '../types.js';
-import { FileWalker } from './file-walker.js';
-import { BudgetManager } from './budget-manager.js';
+import type { BuildConfig, FileInfo, Artifact, CollectorHealth } from '../core/types.js';
+import { FileWalker } from '../core/walker/file-walker.js';
+import { BudgetManager } from '../core/tokens/budget-manager.js';
 import { PackGenerator } from './pack-generator.js';
-import { CanonicalJSON } from './canonical-json.js';
-import { DetectorRegistry } from '../detectors/detector-registry.js';
-import { CollectorRegistry } from '../collectors/collector-registry.js';
-import { schemaValidator, type ValidationStats } from './schema-validator.js';
+import { CanonicalJSON } from '../core/io/canonical-json.js';
+import { DetectorRegistry } from '../features/context-pack/detectors/detector-registry.js';
+import { getCollectorsForPreset } from '../features/context-pack/collectors/index.js';
+import { schemaValidator, type ValidationStats } from '../core/validation/schema-validator.js';
 import { CollectorRunner } from './collector-runner.js';
 import { ErrorFormatter, createFormatterFromResults } from '../errors/error-formatter.js';
-import { validateInputPath, validateOutputPath } from '../utils/path-validator.js';
-import { wrapError } from '../errors/index.js';
-import { TokenCounter } from '../utils/token-counter.js';
+import { validateInputPath, validateOutputPath } from '../core/security/path-validator.js';
+import { wrapError } from '../errors/public.js';
+import { TokenCounter } from '../core/tokens/token-counter.js';
 import { generatePackArtifacts, flattenArtifactPaths, type PackType } from './artifact-reducer.js';
-import { createScopedCollector } from '../collectors/scoped-collector.js';
+// import { createScopedCollector } from '../collectors/scoped-collector.js';
 
 export class ContextPackEngine {
   private rootPath: string;
@@ -65,8 +65,18 @@ export class ContextPackEngine {
       console.log(`Found ${files.length} files`);
 
       // Step 3: Get active collectors
-      const collectorRegistry = new CollectorRegistry();
-      const collectors = await collectorRegistry.getActiveCollectors(this.rootPath, this.config.preset);
+      const allCollectors = getCollectorsForPreset(this.config.preset);
+      const collectors = [];
+
+      for (const collector of allCollectors) {
+        try {
+          const canRun = await collector.detect(this.rootPath);
+          if (canRun) collectors.push(collector);
+        } catch {
+          // If detection throws, treat as "not active" but keep going.
+          continue;
+        }
+      }
 
       console.log(`Active collectors: ${collectors.map(c => c.name).join(', ')}`);
       
@@ -127,57 +137,10 @@ export class ContextPackEngine {
 
       // Step 5.1: Optional scoped pack generation
       let scopedArtifacts: Artifact[] = [];
-      if (this.config.scope) {
-        try {
-          console.log(`\nGenerating scoped pack for: ${this.config.scope.seed}`);
-
-          const scopedCollector = createScopedCollector({
-            seed: this.config.scope.seed,
-            budgetTokens: this.config.scope.budgetTokens,
-            mode: this.config.scope.mode,
-            allowCodeBodies: this.config.scope.allowCodeBodies,
-            include: this.config.scope.include
-          });
-
-          // Check if scoped collector can work with this project
-          const canProcess = await scopedCollector.detect(this.rootPath);
-          if (!canProcess) {
-            throw new Error('Scoped analysis not available for this project (no TypeScript configuration found)');
-          }
-
-          // Run scoped collector
-          const scopedResults = await scopedCollector.collect(context);
-          scopedArtifacts = scopedResults;
-
-          if (this.config.verbose) {
-            const scopedSize = scopedArtifacts.reduce((sum, a) => sum + a.sizeHint, 0);
-            console.log(`Generated scoped pack: ${scopedArtifacts.length} artifacts, ${scopedSize.toLocaleString()} bytes`);
-          }
-
-          // Add scoped artifacts to health tracking
-          healths.push({
-            name: 'scoped',
-            status: 'ok',
-            durationMs: 0 // TODO: track actual duration
-          });
-
-        } catch (error: any) {
-          console.warn(`Scoped pack generation failed: ${error?.message || String(error)}`);
-
-          // Add failed scoped collector to health tracking
-          healths.push({
-            name: 'scoped',
-            status: 'failed',
-            durationMs: 0,
-            errorMessage: error?.message || String(error)
-          });
-
-          // In strict mode, fail completely
-          if (this.config.strict) {
-            throw error;
-          }
-        }
-      }
+      // TODO: Re-enable scoped functionality after breaking cross-feature cycles
+      // if (this.config.scope) {
+      //   // Scoped functionality temporarily disabled to break cycles
+      // }
 
       // Show results for each successful collector
       for (const result of collectorResults) {
@@ -322,6 +285,9 @@ export class ContextPackEngine {
           console.log(errorOutput);
         }
       }
+
+      // Agent-friendly output (print JSON manifest to stdout)
+      await this.handleAgentOutput(finalArtifacts, scopedArtifacts);
 
       // Handle strict mode validation failure after successful pack generation
       if (strictValidationError) {
@@ -545,5 +511,162 @@ export class ContextPackEngine {
     });
 
     return createHash('sha256').update(hashInput).digest('hex').substring(0, 16);
+  }
+
+  /**
+   * Handle agent-friendly output options
+   */
+  private async handleAgentOutput(finalArtifacts: Artifact[], scopedArtifacts: Artifact[]): Promise<void> {
+    if (!this.config.agentOutput) {
+      return;
+    }
+
+    const { printJson, printArtifact, emitPrompt } = this.config.agentOutput;
+
+    // Build pack paths structure
+    const packPaths = {
+      outputDir: this.config.out,
+      scopedDir: this.config.scope ? join(this.config.out, 'scoped', this.generateSeedHash()) : undefined,
+      scopedHash: this.config.scope ? this.generateSeedHash() : undefined
+    };
+
+    // Handle --print <artifact> (stream specific artifact to stdout)
+    if (printArtifact) {
+      await this.printArtifact(scopedArtifacts.length > 0 ? scopedArtifacts : finalArtifacts, printArtifact);
+      return; // Early return - don't mix with other output
+    }
+
+    // Handle --print-json (emit JSON manifest to stdout)
+    if (printJson) {
+      await this.printJsonManifest(scopedArtifacts.length > 0 ? scopedArtifacts : finalArtifacts, packPaths);
+    }
+
+    // Handle --emit-prompt (generate 99-prompt.txt file)
+    if (emitPrompt && this.config.scope) {
+      await this.generatePromptFile(scopedArtifacts.length > 0 ? scopedArtifacts : finalArtifacts, packPaths);
+    }
+  }
+
+  /**
+   * Print specific artifact to stdout
+   */
+  private async printArtifact(artifacts: Artifact[], artifactType: string): Promise<void> {
+    // Map artifact types to their file patterns
+    const typeToPattern: Record<string, string> = {
+      'scope': '00-scope.json',
+      'graph': '10-symbol-graph.json',
+      'slices': '20-slices.ndjson',
+      'index': '40-index.ndjson'
+    };
+
+    const pattern = typeToPattern[artifactType];
+    if (!pattern) {
+      return;
+    }
+
+    // Find the matching artifact
+    const artifact = artifacts.find(a => a.id.endsWith(pattern));
+    if (!artifact) {
+      return;
+    }
+
+    // Print the artifact content to stdout (no prefixes, no logs)
+    if (typeof artifact.data === 'string') {
+      console.log(artifact.data);
+    } else {
+      console.log(CanonicalJSON.stringify(artifact.data));
+    }
+  }
+
+  /**
+   * Print JSON manifest to stdout
+   */
+  private async printJsonManifest(artifacts: Artifact[], packPaths: any): Promise<void> {
+    const manifest = {
+      outDir: packPaths.outputDir,
+      scoped: this.config.scope ? {
+        dir: packPaths.scopedDir,
+        hash: packPaths.scopedHash,
+        scope: this.config.scope.seed,
+        artifacts: this.buildArtifactPaths(artifacts, packPaths.scopedDir)
+      } : undefined
+    };
+
+    console.log(CanonicalJSON.stringify(manifest));
+  }
+
+  /**
+   * Build artifact paths for JSON manifest
+   */
+  private buildArtifactPaths(artifacts: Artifact[], scopedDir: string): Record<string, string> {
+    const paths: Record<string, string> = {};
+
+    for (const artifact of artifacts) {
+      const fileName = artifact.id.split('/').pop();
+      if (!fileName) continue;
+
+      const fullPath = join(scopedDir, fileName);
+
+      if (fileName.startsWith('00-scope.json')) {
+        paths.scope = fullPath;
+      } else if (fileName.startsWith('10-symbol-graph.json')) {
+        paths.graph = fullPath;
+      } else if (fileName.startsWith('20-slices.ndjson')) {
+        paths.slices = fullPath;
+      } else if (fileName.startsWith('30-stubs.d.ts')) {
+        paths.stubs = fullPath;
+      } else if (fileName.startsWith('40-index.ndjson')) {
+        paths.index = fullPath;
+      }
+    }
+
+    return paths;
+  }
+
+  /**
+   * Generate 99-prompt.txt for direct LLM consumption
+   */
+  private async generatePromptFile(artifacts: Artifact[], packPaths: any): Promise<void> {
+    if (!this.config.scope) {
+      return;
+    }
+
+    let promptContent = '';
+
+    // Add header with context information
+    promptContent += `# Scoped Context Pack\n\n`;
+    promptContent += `**Scope:** ${this.config.scope.seed}\n`;
+    promptContent += `**Mode:** ${this.config.scope.mode}\n`;
+    promptContent += `**Budget:** ${this.config.scope.budgetTokens} tokens\n\n`;
+
+    // Add code slices
+    const slicesArtifact = artifacts.find(a => a.id.includes('20-slices.ndjson'));
+    if (slicesArtifact && typeof slicesArtifact.data === 'string') {
+      const lines = slicesArtifact.data.trim().split('\n');
+
+      promptContent += `## Code Context\n\n`;
+
+      for (const line of lines) {
+        try {
+          const slice = JSON.parse(line);
+          promptContent += `### ${slice.filePath}#${slice.symbolName}\n`;
+          if (slice.reason) {
+            promptContent += `*Included: ${slice.reason}*\n\n`;
+          }
+          if (slice.content) {
+            promptContent += `\`\`\`typescript\n${slice.content}\n\`\`\`\n\n`;
+          }
+        } catch (e) {
+          // Skip malformed lines
+        }
+      }
+    }
+
+    // Add footer
+    promptContent += `---\n*Generated by context-pack scoped analyzer*\n`;
+
+    // Write the prompt file
+    const promptPath = join(packPaths.scopedDir, '99-prompt.txt');
+    await writeFile(promptPath, promptContent, 'utf-8');
   }
 }

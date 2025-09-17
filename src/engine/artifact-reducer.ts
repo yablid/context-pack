@@ -4,7 +4,7 @@
  * Takes full artifacts and creates filtered versions for short/minimal packs
  */
 
-import type { Artifact } from '../types.js';
+import type { Artifact } from '../core/types.js';
 
 export type PackType = 'full' | 'short' | 'minimal';
 
