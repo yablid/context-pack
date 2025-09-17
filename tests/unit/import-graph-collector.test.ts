@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { ImportGraphCollector } from '../../src/collectors/typescript/import-graph-collector.js';
-import type { CollectorContext } from '../../src/types.js';
+import { ImportGraphCollector } from '../../src/features/context-pack/collectors/typescript/import-graph-collector.js';
+import type { CollectorContext } from '../../src/core/contracts/collector.js';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';

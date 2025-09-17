@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PathValidator } from '../../src/utils/path-validator.js';
+import { PathValidator } from '../../src/core/security/path-validator.js';
 
 describe('PathValidator', () => {
   it('should accept valid relative paths', async () => {
