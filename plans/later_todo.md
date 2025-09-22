@@ -1,3 +1,6 @@
+
+This is...I think for scoped. feature add on
+
 3c = “ranking the neighborhood.”
 Up to now (3a–3b) you can resolve a seed, build a small dependency/usage graph, and then include nodes until you hit budgets (depth/files/LOC/bytes). That default is essentially BFS + deterministic tie-breaks. It works, but when the candidate set is larger than the budget, BFS keeps “nearest” nodes—not necessarily the most helpful ones.
 

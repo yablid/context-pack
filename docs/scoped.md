@@ -2,6 +2,8 @@
 
 Scoped packs provide symbol-level context extraction for coding agents, generating focused code slices and dependency graphs around specific functions, classes, or interfaces.
 
+**Note:** Scoped packs are one of four integrated features in the Context-Pack Suite. See also: [Context Packs](./context-pack.md), [Refactor Reports](./refactor-report.md), and [Paste Packs](./paste-pack.md).
+
 ## Overview
 
 While regular context packs provide metadata-only analysis, scoped packs extract **actual code slices** with proper dependency graphs for precise agent tasks. They answer focused questions:

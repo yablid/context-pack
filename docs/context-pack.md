@@ -2,6 +2,8 @@
 
 Context packs provide comprehensive, metadata-only analysis of codebases suitable for LLM agents and architectural review. They contain rich structural information without exposing source code bodies.
 
+**Note:** Context packs are one of four integrated features in the Context-Pack Suite. See also: [Scoped Packs](./scoped.md), [Refactor Reports](./refactor-report.md), and [Paste Packs](./paste-pack.md).
+
 ## Overview
 
 A context pack is a deterministic snapshot of your codebase's architecture, dependencies, configuration, and quality metrics. It answers key questions agents need:
@@ -26,6 +28,9 @@ context-pack /path/to/project
 
 # Generate with verbose output
 context-pack . --verbose
+
+# Combined with other features
+context-pack . --refactor-report --paste-pack
 ```
 
 ### Detail Levels
@@ -220,8 +225,8 @@ context-pack . --strict
 # Skip validation for speed
 context-pack . --no-validate
 
-# Validate existing pack
-context-pack validate ./.contextpack
+# Validate existing pack (if implemented)
+context-pack . --validate-only --strict
 ```
 
 ## Best Practices

@@ -2,44 +2,39 @@
 
 Complete command-line interface reference for the Context Pack CLI.
 
-## Basic Commands
+## Three Core Commands
 
-### `context-pack [path]`
+### `context-pack [path]` or `ctxp [path]`
 
-Generate a context pack for the specified directory.
+Generate a context pack for the specified directory (default mode).
 
 ```bash
-context-pack .                    # Current directory
-context-pack /path/to/project     # Specific directory
-context-pack                      # Current directory (implicit)
+ctxp                              # Current directory
+ctxp .                            # Current directory (explicit)
+ctxp /path/to/project             # Specific directory
+# Or use the full command:
+context-pack .                    # Same as ctxp .
 ```
 
-### `context-pack detect [path]`
+### `ctxp [path] --scope <symbol>`
 
-Analyze directory and show detected ecosystems and available collectors.
+Generate scoped pack for a specific function or symbol.
 
 ```bash
-context-pack detect .
-context-pack detect /path/to/project
+ctxp . --scope src/api.ts#handleUser
+ctxp . --scope src/utils.ts#line:42:10
+ctxp . --scope src/types.ts#Config
 ```
 
-### `context-pack schema [name]`
+### `ctxp [path] --paste`
 
-Display JSON schemas for artifacts.
-
-```bash
-context-pack schema               # List all available schemas
-context-pack schema pack          # Show pack metadata schema
-context-pack schema exports       # Show exports schema
-```
-
-### `context-pack validate <pack-path>`
-
-Validate an existing context pack against schemas.
+Generate single-file paste pack for code sharing (outputs to stdout).
 
 ```bash
-context-pack validate ./.contextpack
-context-pack validate /path/to/pack --strict
+ctxp . --paste                         # Current directory to stdout
+ctxp src/ --paste                      # Specific directory to stdout
+ctxp . --paste --paste-allow-code      # Include full code bodies
+ctxp . --paste > output.txt            # Redirect to file
 ```
 
 ## Generation Options
@@ -96,23 +91,40 @@ Control the amount of detail and output size:
 
 ```bash
 --out <directory>               # Output directory (default: .contextpack)
+                               # Note: paste mode outputs to stdout, not --out
 ```
 
-## Scoped Pack Options
+## Feature-Specific Options
 
-### Basic Scoped Generation
+### Scoped Pack Options
 
 ```bash
 --scope <FQN>                   # Generate scoped pack for symbol
 --scope-allow-code              # Required: allow code body emission
-```
-
-### Scoped Configuration
-
-```bash
 --scope-budget <tokens>         # Token budget for code slices (default: 20000)
 --scope-mode static             # Analysis mode: static or hybrid (default: static)
 --scope-include <list>          # Include tests,docs in analysis
+```
+
+### Refactor Report Options
+
+```bash
+--refactor-report               # Generate refactor analysis report
+--refactor-format json          # Output format: json or paste (default: json)
+--refactor-import-graph <path>  # Custom import graph artifact path
+--refactor-exports <path>       # Custom exports artifact path
+```
+
+### Paste Pack Options
+
+```bash
+--paste-pack                    # Generate single-file paste pack
+--paste-allow-code              # Include full code bodies (default: signatures only)
+--paste-include <patterns>      # Include file patterns (e.g., "*.ts,*.js")
+--paste-exclude <patterns>      # Exclude file patterns
+--paste-max-files <number>      # Maximum files to include (default: 100)
+--paste-max-loc <number>        # Maximum lines of code (default: 50000)
+--paste-max-bytes <number>      # Maximum bytes (default: 2MB)
 ```
 
 ### FQN (Fully Qualified Name) Formats
@@ -139,48 +151,86 @@ Control the amount of detail and output size:
 
 ```bash
 # Quick analysis
-context-pack . --level summary
+ctxp . --level summary
 
 # Default analysis with verbose output
-context-pack . --verbose
+ctxp . --verbose
 
 # Large project with performance tuning
-context-pack . --level contracts --concurrency 6 --no-hash-files
+ctxp . --level contracts --concurrency 6 --no-hash-files
 
 # CI/production with strict validation
-context-pack . --strict --no-hash-files --concurrency 1
+ctxp . --strict --no-hash-files --concurrency 1
 ```
 
 ### Scoped Packs
 
 ```bash
 # Interface analysis
-context-pack . --scope src/types.ts#BuildConfig --scope-allow-code
+ctxp . --scope src/types.ts#BuildConfig --scope-allow-code
 
 # Class with increased budget
-context-pack . --scope src/engine.ts#Parser --scope-budget 30000 --scope-allow-code
+ctxp . --scope src/engine.ts#Parser --scope-budget 30000 --scope-allow-code
 
 # Include tests and docs
-context-pack . --scope src/auth.ts#validate --scope-include tests,docs --scope-allow-code
+ctxp . --scope src/auth.ts#validate --scope-include tests,docs --scope-allow-code
 
 # Method-specific analysis
-context-pack . --scope src/utils.ts#Formatter.render --scope-allow-code
+ctxp . --scope src/utils.ts#Formatter.render --scope-allow-code
+```
+
+### Refactor Analysis
+
+```bash
+# Basic refactor report
+ctxp . --refactor-report
+
+# Paste format for easy reading
+ctxp . --refactor-report --refactor-format paste
+
+# Alternative command format
+ctxp . --refactor-report
+
+# Custom artifact paths
+ctxp . --refactor-report --refactor-import-graph ./custom/import-graph.json
+```
+
+### Paste Packs
+
+```bash
+# Signatures only (safe for sharing) - outputs to stdout
+ctxp ./src --paste
+
+# Full code bodies (careful with secrets) - outputs to stdout
+ctxp ./src --paste --paste-allow-code
+
+# Redirect to file
+ctxp ./src --paste > paste-output.txt
+
+# Filtered by file type
+ctxp . --paste --paste-include "*.ts,*.js" --paste-exclude "*.test.ts"
+
+# With budget limits
+ctxp . --paste --paste-max-files 50 --paste-max-loc 10000
 ```
 
 ### Advanced Usage
 
 ```bash
 # Custom output location
-context-pack . --out ./analysis --level deep
+ctxp . --out ./analysis --level deep
 
 # Maximum performance
-context-pack . --concurrency 8 --no-hash-files --no-validate
+ctxp . --concurrency 8 --no-hash-files --no-validate
 
 # Development workflow
-context-pack . --verbose --format ndjson --level summary
+ctxp . --verbose --format ndjson --level summary
 
-# Validation only
-context-pack validate ./.contextpack --strict --verbose
+# All features combined
+ctxp . --scope src/types.ts#Config --scope-allow-code --refactor-report --paste-pack
+
+# Multiple features combined
+ctxp . --scope src/api.ts#handler --refactor-report --verbose
 ```
 
 ## Global Flags
@@ -191,7 +241,6 @@ These flags work with all commands:
 --help              # Show help information
 --version           # Show version number
 --verbose           # Enable detailed output
---quiet             # Suppress non-error output
 ```
 
 ## Exit Codes
@@ -204,30 +253,6 @@ The CLI uses standard exit codes:
 - `3`: Validation failed (with --strict)
 - `4`: Budget exceeded (hard limit)
 - `5`: Collector failure (unrecoverable)
-
-## Environment Variables
-
-### Configuration
-
-```bash
-export CONTEXT_PACK_BUDGET=2000000      # Default budget in bytes
-export CONTEXT_PACK_CONCURRENCY=4       # Default concurrency
-export CONTEXT_PACK_LEVEL=contracts     # Default detail level
-```
-
-### Performance
-
-```bash
-export CONTEXT_PACK_HASH_FILES=false    # Skip hashing by default
-export CONTEXT_PACK_MAX_HASH_SIZE=5     # Hash file size limit (MB)
-```
-
-### Development
-
-```bash
-export CONTEXT_PACK_VERBOSE=true        # Enable verbose output
-export CONTEXT_PACK_VALIDATE=false      # Skip validation
-```
 
 ## Configuration Files
 
@@ -269,7 +294,7 @@ Add configuration to `package.json`:
 Fast generation for development use:
 
 ```bash
-context-pack . --level summary --no-hash-files --concurrency 6 --no-validate
+ctxp . --level summary --no-hash-files --concurrency 6 --no-validate
 ```
 
 ### CI Preset
@@ -277,7 +302,7 @@ context-pack . --level summary --no-hash-files --concurrency 6 --no-validate
 Reliable generation for continuous integration:
 
 ```bash
-context-pack . --level contracts --strict --concurrency 1 --max-hash-file-size 5
+ctxp . --level contracts --strict --concurrency 1 --max-hash-file-size 5
 ```
 
 ### Production Preset
@@ -285,7 +310,7 @@ context-pack . --level contracts --strict --concurrency 1 --max-hash-file-size 5
 Comprehensive analysis for production review:
 
 ```bash
-context-pack . --level deep --strict --deterministic --verbose
+ctxp . --level deep --strict --deterministic --verbose
 ```
 
 ## Debugging Options
@@ -337,41 +362,41 @@ Completed in 4.2s
 
 ```bash
 # Quick check of current state
-context-pack . --level summary --no-hash-files
+ctxp . --level summary --no-hash-files
 
 # Focus on specific symbol
-context-pack . --scope src/api.ts#handleRequest --scope-allow-code
+ctxp . --scope src/api.ts#handleRequest --scope-allow-code
 ```
 
 ### Code Review Preparation
 
 ```bash
 # Comprehensive analysis
-context-pack . --level deep --strict
+ctxp . --level deep --strict
 
 # Include scoped analysis of key changes
-context-pack . --scope src/changes.ts#newFeature --scope-allow-code --scope-include tests
+ctxp . --scope src/changes.ts#newFeature --scope-allow-code --scope-include tests
 ```
 
 ### CI/CD Integration
 
 ```bash
 # Fast validation
-context-pack . --validate-only --strict --no-hash-files
+ctxp . --validate-only --strict --no-hash-files
 
 # Archive generation
-context-pack . --level contracts --out ./artifacts --deterministic
+ctxp . --level contracts --out ./artifacts --deterministic
 ```
 
 ### Performance Debugging
 
 ```bash
 # Profile generation time
-time context-pack . --verbose --level deep
+time ctxp . --verbose --level deep
 
 # Test concurrency impact
-context-pack . --concurrency 1 --verbose
-context-pack . --concurrency 8 --verbose
+ctxp . --concurrency 1 --verbose
+ctxp . --concurrency 8 --verbose
 ```
 
 ## Error Messages
@@ -404,14 +429,14 @@ context-pack . --concurrency 8 --verbose
 ### Debug Commands
 
 ```bash
-# Test directory access
-context-pack detect . --verbose
+# Test basic functionality
+ctxp . --verbose --level summary
 
-# Validate existing pack
-context-pack validate ./.contextpack --verbose
+# Test scoped analysis
+ctxp . --scope src/main.ts#main --scope-plan-only --verbose
 
-# Check schema definitions
-context-pack schema --verbose
+# Test paste generation
+ctxp . --paste --verbose --paste-max-files 5
 ```
 
 ## Integration Examples
@@ -436,7 +461,7 @@ context-pack schema --verbose
 ```bash
 #!/bin/sh
 # .git/hooks/pre-commit
-context-pack . --validate-only --strict --quiet
+context-pack . --validate-only --strict
 ```
 
 ### VS Code Task

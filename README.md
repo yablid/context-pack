@@ -1,18 +1,23 @@
-# Context Pack CLI
+# Context-Pack Suite
 
-**Production-Ready** deterministic CLI for creating language-aware context packs of codebases—safe to share publicly, rich enough for architectural reviews, refactors, and API surface audits. Now with **symbol-level context extraction** for coding agents.
+**Production-Ready** unified codebase analysis and context extraction for LLM agents. Four coordinated features provide comprehensive understanding from metadata-only analysis to symbol-level code extraction.
 
-## Features
+## Four Integrated Features
 
-- **Safe by design**: No source code bodies by default, no secrets, only metadata (hashes, counts, names, and schema information)
-- **Symbol-level context**: Extract focused code slices around specific functions, classes, or interfaces with `--scope`
-- **Deterministic output**: Same inputs → identical outputs across runs
-- **High performance**: Concurrent collectors with bounded concurrency (default: 3 simultaneous)
-- **Smart file handling**: Peek-based binary detection, optional hashing with size limits, full .gitignore support
+- 🏗️ **Context Packs**: Metadata-only codebase analysis (safe for sharing)
+- 🎯 **Scoped Packs**: Symbol-level code extraction with dependency graphs
+- 📊 **Refactor Reports**: Architectural analysis and improvement suggestions
+- 📋 **Paste Packs**: Single-file code consolidation for sharing
+
+## Key Principles
+
+- **Safe by design**: No source code bodies by default, explicit opt-in for code, automatic secret redaction
+- **Rich analysis**: Import graphs, TypeScript exports, architectural metrics, dependency ranking
+- **Deterministic output**: Same inputs → identical outputs across runs and platforms
+- **High performance**: Shared TypeScript program analysis with concurrent processing
+- **Smart file handling**: Peek-based binary detection, budget enforcement, full .gitignore support
 - **Schema validated**: All artifacts validated against zod schemas with detailed error reporting
-- **Language-aware**: TypeScript/ESM support with comprehensive collectors including SVG assets
-- **Budget-conscious**: Configurable size limits with intelligent downsampling
-- **Monorepo-friendly**: Detects pnpm, npm, yarn workspaces automatically
+- **Agent optimized**: LLM-friendly formats with stable separators and clear boundaries
 
 ## Quick Start
 
@@ -20,33 +25,39 @@
 # Install globally (after building)
 pnpm link --global
 
-# Generate a context pack for current directory
-context-pack .
+# Basic context pack (metadata only)
+context-pack .    # or: ctxp .
 
-# Extract symbol-level context for coding agents
-context-pack . --scope src/types.ts#BuildConfig --scope-allow-code
+# Symbol-level code extraction
+ctxp . --scope src/types.ts#BuildConfig --scope-allow-code
 
-# Detect ecosystem and available collectors
-context-pack detect .
+# Architectural analysis
+ctxp . --refactor-report
+
+# Single-file code sharing
+ctxp ./src --paste --paste-allow-code
+
+# All features combined
+ctxp . \
+  --scope src/api.ts#handleRequest --scope-allow-code \
+  --refactor-report \
+  --paste-pack
 
 # Generate with different detail levels
-context-pack . --level summary     # ≤ 500KB
-context-pack . --level contracts   # ≤ 1.5MB (default)
-context-pack . --level full-api    # ≤ 2MB
+ctxp . --level summary     # ≤ 500KB
+ctxp . --level contracts   # ≤ 1.5MB (default)
+ctxp . --level full-api    # ≤ 2MB
 
-# View available JSON schemas
-context-pack schema
-
-# Validate existing context pack
-context-pack validate ./.contextpack --verbose
+# Validate with strict checking
+ctxp . --validate-only --strict --verbose
 
 # Performance and optimization options
-context-pack . --concurrency 5           # Max 5 concurrent collectors
-context-pack . --no-hash-files           # Skip SHA-256 hashing for speed
-context-pack . --max-hash-file-size 5    # Hash files up to 5MB only
+ctxp . --concurrency 5           # Max 5 concurrent collectors
+ctxp . --no-hash-files           # Skip SHA-256 hashing for speed
+ctxp . --max-hash-file-size 5    # Hash files up to 5MB only
 
 # Generate with validation (strict mode fails after pack creation)
-context-pack . --strict
+ctxp . --strict
 ```
 
 ## Output Structure
@@ -164,13 +175,13 @@ Context pack uses bounded concurrency to process collectors in parallel while pr
 
 ```bash
 # Default: 3 concurrent collectors (balanced performance/memory)
-context-pack .
+ctxp .
 
 # High-performance systems: increase concurrency
-context-pack . --concurrency 8
+ctxp . --concurrency 8
 
 # Resource-constrained: sequential processing
-context-pack . --concurrency 1
+ctxp . --concurrency 1
 ```
 
 ### File Processing Optimizations
@@ -178,13 +189,13 @@ Large codebases benefit from these optimization flags:
 
 ```bash
 # Skip hashing for faster processing (useful during development)
-context-pack . --no-hash-files
+ctxp . --no-hash-files
 
 # Hash only smaller files (default: 10MB limit)
-context-pack . --max-hash-file-size 5
+ctxp . --max-hash-file-size 5
 
 # Combine optimizations for maximum speed
-context-pack . --no-hash-files --concurrency 6
+ctxp . --no-hash-files --concurrency 6
 ```
 
 **Performance characteristics**:
@@ -197,13 +208,13 @@ context-pack . --no-hash-files --concurrency 6
 
 ```bash
 # Development: fast with retry logic
-context-pack . --verbose
+ctxp . --verbose
 
 # CI/Production: strict validation, no retries
-context-pack . --strict --validate-only
+ctxp . --strict --validate-only
 
 # Debugging: see all validation warnings
-context-pack . --verbose --no-validate
+ctxp . --verbose --no-validate
 ```
 
 The `--strict` flag enables stricter validation but allows pack generation to complete before failing, so you can inspect the artifacts even when validation errors occur.

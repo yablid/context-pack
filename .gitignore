@@ -8,6 +8,8 @@ node_modules/
 # Test outputs
 .contextpack/
 *.contextpack/
+test-plan/
+demo-pack/
 
 # IDE files
 .vscode/

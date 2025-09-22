@@ -69,6 +69,10 @@ function parseArgs(): CLIArgs {
   const args = process.argv.slice(2);
 
   // Show help
+  if (args.includes('--help-all')) {
+    showAdvancedHelp();
+    process.exit(0);
+  }
   if (args.includes('--help') || args.includes('-h')) {
     showHelp();
     process.exit(0);
@@ -132,7 +136,7 @@ function parseArgs(): CLIArgs {
     concurrency: getNumber('concurrency', 3),
     // Scoped pack flags
     scope: getValue('scope', '').trim() || undefined,
-    scopeAllowCode: getFlag('scope-allow-code'),
+    scopeAllowCode: getFlag('scope-allow-code') || (!getFlag('no-code') && !!getValue('scope', '').trim()),
     scopeBudget: getNumber('scope-budget', 20000),
     scopeMode: getValue('scope-mode', 'static') as CLIArgs['scopeMode'],
     scopeInclude: getArray('scope-include'),
@@ -145,7 +149,7 @@ function parseArgs(): CLIArgs {
     refactorImportGraph: getValue('refactor-import-graph', '').trim() || undefined,
     refactorExports: getValue('refactor-exports', '').trim() || undefined,
     // Paste pack flags
-    pastePack: getFlag('paste-pack'),
+    pastePack: getFlag('paste-pack') || getFlag('paste'),
     pasteAllowCode: getFlag('paste-allow-code'),
     pasteInclude: getArray('paste-include'),
     pasteExclude: getArray('paste-exclude'),
@@ -173,79 +177,86 @@ function showHelp() {
 Context Pack CLI v${packageJson.version}
 
 USAGE:
-  context-pack <path>           Generate context pack for directory
-  context-pack detect <path>    Detect ecosystem and presets
-  context-pack validate <path>  Validate existing context pack
-  context-pack schema [id]      Show JSON schemas
+  context-pack [path]           Generate context pack (default)
+  context-pack [path] --scope   Generate scoped pack for symbol
+  context-pack [path] --paste   Generate single-file directory dump
 
-OPTIONS:
-  --preset <name>           Preset configuration (default: ts-pnpm)
+COMMON OPTIONS:
+  --out <dir>               Output directory (default: ./.contextpack)
   --level <level>           Detail level: summary|contracts|full-api|deep (default: contracts)
+  --verbose                 Verbose output
+  -h, --help                Show this help
+  --help-all                Show all advanced options
+  -v, --version             Show version
+
+SCOPED PACK:
+  --scope <fqn>             Symbol to analyze (path#symbol or path#line:col)
+  --scope-budget <tokens>   Token budget (default: 20000)
+  --scope-plan-only         Generate scope and graph only (for budget planning)
+  --no-code                 Exclude code bodies (include by default)
+
+PASTE PACK:
+  --paste                   Alias for --paste-pack
+  --paste-pack              Generate single-file directory dump (outputs to stdout)
+  --paste-max-files <num>   Maximum files to include (default: 100)
+  --paste-max-loc <num>     Maximum lines of code (default: 50000)
+  --paste-allow-code        Include full code bodies
+
+EXAMPLES:
+  context-pack                                    # Current directory
+  context-pack /path/to/project                   # Specific directory
+  context-pack . --scope src/api.ts#handleUser   # Function context
+  context-pack . --paste > output.txt            # Directory dump to file
+  context-pack . --paste                         # Directory dump to stdout
+
+ADVANCED OPTIONS (use --help-all for complete list):
+  --preset, --budget, --packages, --exclude, --format, --concurrency
+  --refactor-report, --print-json, --emit-prompt, and more...
+`);
+}
+
+function showAdvancedHelp() {
+  console.log(`
+Context Pack CLI v${packageJson.version} - Advanced Options
+
+GENERATION OPTIONS:
+  --preset <name>           Preset configuration (default: ts-pnpm)
   --budget <bytes>          Maximum pack size in bytes (default: 1500000)
   --risk-profile <profile>  Risk profile: safe|normal|extended|minimal (default: safe)
   --packages <globs>        Limit to specific packages (comma-separated)
   --exclude <globs>         Extra ignore patterns (comma-separated)
-  --out <dir>               Output directory (default: ./.contextpack)
   --format <format>         Output format: json|ndjson (default: json)
-  --verbose                 Verbose output
   --strict                  Strict mode - fail on validation errors
   --no-validate             Disable schema validation
-  --validate-only           Only validate artifacts, do not generate pack
   --no-deterministic        Disable deterministic output
   --no-hash-files           Disable SHA-256 hashing of files
   --max-hash-file-size <mb> Maximum file size to hash in MB (default: 10)
   --concurrency <num>       Max concurrent collectors (default: 3)
 
-SCOPED PACK OPTIONS:
-  --scope <fqn>             Generate scoped pack for symbol (path#symbol)
-  --scope-allow-code        Allow code bodies in scoped pack (security risk)
-  --scope-budget <tokens>   Token budget for scoped pack (default: 20000)
+SCOPED PACK (ADVANCED):
+  --scope-allow-code        Explicit code bodies flag (enabled by default)
   --scope-mode <mode>       Analysis mode: static|hybrid (default: static)
   --scope-include <list>    Include tests,docs (comma-separated)
-  --scope-plan-only         Generate scope and graph only (for budget planning)
   --scope-include-non-exported  Include non-exported symbols (default: false)
   --scope-tsconfig <path>   Override tsconfig.json path
 
-REFACTOR REPORT OPTIONS:
+REFACTOR REPORT:
   --refactor-report         Generate structural refactor report
   --refactor-format <fmt>   Output format: json|paste (default: json)
   --refactor-import-graph <path>  Path to import-graph.json (optional)
   --refactor-exports <path> Path to exports.json (optional)
 
-PASTE PACK OPTIONS:
-  --paste-pack              Generate single-file directory dump
-  --paste-allow-code        Allow code bodies in paste output (security risk)
+PASTE PACK (ADVANCED):
   --paste-include <globs>   Include patterns (comma-separated)
   --paste-exclude <globs>   Exclude patterns (comma-separated)
-  --paste-max-files <num>   Maximum files to include (default: 100)
-  --paste-max-loc <num>     Maximum lines of code (default: 50000)
   --paste-max-bytes <num>   Maximum bytes (default: 2000000)
+
+  NOTE: Paste pack outputs to stdout. Use redirection: context-pack . --paste > file.txt
 
 AGENT-FRIENDLY OUTPUT:
   --print-json              Print artifact paths as JSON to stdout after success
   --print <artifact>        Print specific artifact to stdout (slices|graph|scope|index)
   --emit-prompt             Generate 99-prompt.txt for direct LLM consumption
-
-  -h, --help                Show this help
-  -v, --version             Show version
-
-EXAMPLES:
-  context-pack .
-  context-pack . --level summary --verbose
-  context-pack . --no-hash-files --preset ts-simple
-  context-pack detect .
-  context-pack validate ./.contextpack --strict
-
-SCOPED PACK EXAMPLES:
-  context-pack . --scope src/engine/engine.ts#createEngine
-  context-pack . --scope src/types.ts#BuildConfig --scope-allow-code
-  context-pack . --scope src/utils/helper.ts#line:42:10 --scope-budget 10000
-
-AGENT-FRIENDLY EXAMPLES:
-  context-pack . --scope src/types.ts#Config --print-json
-  context-pack . --scope src/api.ts#handleRequest --print slices
-  context-pack . --scope src/core.ts#processData --emit-prompt --scope-allow-code
-  context-pack . --scope src/big.ts#Complex --scope-plan-only --print-json
 `);
 }
 
@@ -355,7 +366,6 @@ async function handleScopedPack(config: CLIArgs) {
 
   try {
     // Find appropriate tsconfig for the seed
-    const { TsProgramService } = await import('./core/ts-program/service.js');
     let tsconfigPath = config.scopeTsconfig;
     if (!tsconfigPath && config.scope) {
       const seedPath = config.scope.split('#')[0].split(':')[0];
@@ -380,7 +390,7 @@ async function handleScopedPack(config: CLIArgs) {
         includeTests: config.scopeInclude?.includes('tests'),
         includeDocs: config.scopeInclude?.includes('docs'),
         includeNonExported: config.scopeIncludeNonExported,
-        tsconfig: config.scopeTsconfig,
+        tsconfig: tsconfigPath,
       },
       paste: config.scopePlanOnly ? undefined : {
         budgetTokens: config.scopeBudget,
@@ -397,7 +407,7 @@ async function handleScopedPack(config: CLIArgs) {
       const index = await planOnlyService.generateIndex(scopedConfig.planOnly);
 
       // Handle output
-      if (config.printJson) {
+      if (config.printJson || config.print === 'scope') {
         console.log(JSON.stringify(index, null, 2));
       } else {
         const outputDir = join(config.out, 'scoped');

@@ -1,1 +1,0 @@
-{"context":{"after":3,"before":3},"endChar":3090,"endLine":73,"path":"src/engine/context-pack-engine.ts","reasons":["seed"],"startChar":998,"startLine":17,"symbolId":"src/engine/context-pack-engine.ts#ContextPackEngine","symbolKind":"class","symbolName":"ContextPackEngine","tokens":{"average":0,"conservative":0,"optimistic":0}}

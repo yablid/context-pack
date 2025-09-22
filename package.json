@@ -4,7 +4,8 @@
   "description": "Deterministic CLI for creating language-aware context packs of codebases",
   "type": "module",
   "bin": {
-    "context-pack": "dist/cli.js"
+    "context-pack": "dist/cli.js",
+    "ctxp": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
