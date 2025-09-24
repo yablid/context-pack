@@ -11,7 +11,7 @@ describe('CLI Smoke Tests', () => {
     const { stdout } = await execAsync(`node ${CLI_PATH} --help`);
     
     expect(stdout).toContain('context-pack');
-    expect(stdout).toContain('Usage:');
+    expect(stdout).toContain('USAGE:');
   });
 
   it('should show version', async () => {

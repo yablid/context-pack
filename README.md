@@ -37,6 +37,10 @@ ctxp . --refactor-report
 # Single-file code sharing
 ctxp ./src --paste --paste-allow-code
 
+# Selective paste packs
+ctxp . --paste --only "*.json" > config-files.txt
+ctxp . --paste --ex node_modules,dist,tests > clean-code.txt
+
 # All features combined
 ctxp . \
   --scope src/api.ts#handleRequest --scope-allow-code \

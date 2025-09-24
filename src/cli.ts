@@ -59,6 +59,9 @@ interface CLIArgs {
   pasteMaxFiles: number;
   pasteMaxLoc: number;
   pasteMaxBytes: number;
+  // New intuitive aliases for paste filtering
+  ex?: string[];
+  only?: string[];
   // Agent-friendly output
   printJson: boolean;
   print?: 'slices' | 'graph' | 'scope' | 'index';
@@ -156,6 +159,9 @@ function parseArgs(): CLIArgs {
     pasteMaxFiles: getNumber('paste-max-files', 100),
     pasteMaxLoc: getNumber('paste-max-loc', 50000),
     pasteMaxBytes: getNumber('paste-max-bytes', 2000000),
+    // New intuitive aliases for paste filtering
+    ex: getArray('ex'),
+    only: getArray('only'),
     // Agent-friendly output flags
     printJson: getFlag('print-json'),
     print: (getValue('print', '').trim() || undefined) as CLIArgs['print'],
@@ -201,13 +207,16 @@ PASTE PACK:
   --paste-max-files <num>   Maximum files to include (default: 100)
   --paste-max-loc <num>     Maximum lines of code (default: 50000)
   --paste-allow-code        Include full code bodies
+  --ex <patterns>           Exclude directories/files (comma-separated)
+  --only <patterns>         Include only matching patterns (comma-separated)
 
 EXAMPLES:
   context-pack                                    # Current directory
   context-pack /path/to/project                   # Specific directory
   context-pack . --scope src/api.ts#handleUser   # Function context
   context-pack . --paste > output.txt            # Directory dump to file
-  context-pack . --paste                         # Directory dump to stdout
+  context-pack . --paste --ex node_modules,dist > clean.txt  # Exclude directories
+  context-pack . --paste --only "*.json" > packagejsonlist.txt  # JSON files only
 
 ADVANCED OPTIONS (use --help-all for complete list):
   --preset, --budget, --packages, --exclude, --format, --concurrency
@@ -249,9 +258,12 @@ REFACTOR REPORT:
 PASTE PACK (ADVANCED):
   --paste-include <globs>   Include patterns (comma-separated)
   --paste-exclude <globs>   Exclude patterns (comma-separated)
+  --ex <patterns>           Exclude directories/files (alias for exclude)
+  --only <patterns>         Include only matching patterns (alias for include)
   --paste-max-bytes <num>   Maximum bytes (default: 2000000)
 
   NOTE: Paste pack outputs to stdout. Use redirection: context-pack . --paste > file.txt
+  EXAMPLES: --ex node_modules,dist,*.log  --only "*.ts,*.js"
 
 AGENT-FRIENDLY OUTPUT:
   --print-json              Print artifact paths as JSON to stdout after success
@@ -486,11 +498,11 @@ async function handlePastePack(config: CLIArgs) {
         maxLoc: config.pasteMaxLoc,
         maxBytes: config.pasteMaxBytes,
       },
-      include: config.pasteInclude ? {
-        patterns: config.pasteInclude,
+      include: (config.pasteInclude || config.only) ? {
+        patterns: [...(config.pasteInclude || []), ...(config.only || [])],
       } : undefined,
-      exclude: config.pasteExclude ? {
-        patterns: config.pasteExclude,
+      exclude: (config.pasteExclude || config.ex) ? {
+        patterns: [...(config.pasteExclude || []), ...(config.ex || [])],
       } : undefined,
     };
 
