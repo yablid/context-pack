@@ -193,34 +193,121 @@ export class PastePackService {
   }
 
   private extractSignatures(content: string, extension: string): string {
-    // Extract only type signatures, interfaces, function declarations
-    if (extension === '.ts' || extension === '.js') {
+    // Extract signatures, interfaces, types, but not function bodies
+    if (extension === '.ts' || extension === '.tsx' || extension === '.js' || extension === '.jsx') {
       const lines = content.split('\n');
-      const signatures: string[] = [];
+      const result: string[] = [];
+      let inFunctionBody = false;
+      let braceDepth = 0;
+      let inInterface = false;
+      let inType = false;
+      let inClass = false;
 
-      for (const line of lines) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         const trimmed = line.trim();
-        if (
-          trimmed.startsWith('export') ||
-          trimmed.startsWith('interface') ||
-          trimmed.startsWith('type ') ||
-          trimmed.startsWith('class ') ||
-          trimmed.startsWith('function ') ||
-          trimmed.startsWith('const ') && trimmed.includes(':') ||
-          trimmed.startsWith('import') ||
-          trimmed.startsWith('//') ||
-          trimmed.startsWith('/*') ||
-          trimmed.startsWith('*')
-        ) {
-          signatures.push(line);
+
+        // Track interface/type/class blocks
+        if (trimmed.startsWith('interface ') || trimmed.startsWith('export interface ')) {
+          inInterface = true;
+          inFunctionBody = false;
+          braceDepth = 0;
+        } else if (trimmed.startsWith('type ') || trimmed.startsWith('export type ')) {
+          inType = true;
+          inFunctionBody = false;
+          braceDepth = 0;
+        } else if (trimmed.startsWith('class ') || trimmed.startsWith('export class ')) {
+          inClass = true;
+          inFunctionBody = false;
+          braceDepth = 0;
+        }
+
+        // Always include imports, comments, and type definitions
+        if (trimmed.startsWith('import') ||
+            trimmed.startsWith('export') && !trimmed.includes('function') && !trimmed.includes('const') ||
+            trimmed.startsWith('//') ||
+            trimmed.startsWith('/*') ||
+            trimmed.startsWith('*') ||
+            inInterface ||
+            inType) {
+          result.push(line);
+        }
+        // For functions and methods, only include signatures
+        else if (trimmed.startsWith('function ') ||
+                 trimmed.startsWith('export function ') ||
+                 trimmed.startsWith('async function ') ||
+                 trimmed.startsWith('export async function ')) {
+          // Include the signature line
+          const openBrace = line.indexOf('{');
+          if (openBrace !== -1) {
+            // Replace body with semicolon
+            result.push(line.substring(0, openBrace).trimEnd() + ';');
+            inFunctionBody = true;
+          } else {
+            result.push(line);
+          }
+        }
+        // For const/let with type annotations, include them
+        else if ((trimmed.startsWith('const ') || trimmed.startsWith('let ') ||
+                  trimmed.startsWith('export const ') || trimmed.startsWith('export let ')) &&
+                 trimmed.includes(':')) {
+          const openBrace = line.indexOf('{');
+          if (openBrace !== -1 && !trimmed.includes('=>')) {
+            // Object literal - skip
+            continue;
+          }
+          // Arrow function - just show signature
+          if (trimmed.includes('=>')) {
+            const arrowIndex = line.indexOf('=>');
+            result.push(line.substring(0, arrowIndex + 2).trimEnd() + ' { /* ... */ }');
+          } else {
+            result.push(line);
+          }
+        }
+        // In class - include method signatures
+        else if (inClass && !inFunctionBody) {
+          if (trimmed.includes('(') && trimmed.includes(')')) {
+            const openBrace = line.indexOf('{');
+            if (openBrace !== -1) {
+              result.push(line.substring(0, openBrace).trimEnd() + ' { /* ... */ }');
+              inFunctionBody = true;
+            } else {
+              result.push(line);
+            }
+          } else if (trimmed) {
+            // Property definitions
+            result.push(line);
+          }
+        }
+
+        // Track brace depth to know when we exit blocks
+        for (const char of trimmed) {
+          if (char === '{') braceDepth++;
+          if (char === '}') {
+            braceDepth--;
+            if (braceDepth === 0) {
+              inInterface = false;
+              inType = false;
+              inClass = false;
+              inFunctionBody = false;
+            } else if (braceDepth === 1 && inClass) {
+              // Exited a method body but still in class
+              inFunctionBody = false;
+            }
+          }
         }
       }
 
-      return signatures.join('\n');
+      return result.join('\n');
     }
 
-    // For other files, return first few lines as sample
-    return content.split('\n').slice(0, 10).join('\n') + '\n... (content truncated)';
+    // For non-code files, show more content
+    const lines = content.split('\n');
+    if (lines.length <= 50) {
+      return content; // Small files - show everything
+    }
+    // For larger files, show first 30 lines
+    return lines.slice(0, 30).join('\n') + '\n\n... (content truncated after 30 lines)';
   }
 
   private generatePasteContent(files: PastePackFile[], config: PastePackConfig): string {
