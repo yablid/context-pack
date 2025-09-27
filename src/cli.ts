@@ -37,9 +37,11 @@ interface CLIArgs {
   hashFiles: boolean;
   maxHashFileSizeMB: number;
   concurrency: number;
+  // Unified code body control
+  allowCode: boolean;
   // Scoped pack args
   scope?: string;
-  scopeAllowCode: boolean;
+  scopeAllowCode: boolean; // deprecated, use allowCode
   scopeBudget: number;
   scopeMode: 'static' | 'hybrid';
   scopeInclude?: string[];
@@ -53,7 +55,7 @@ interface CLIArgs {
   refactorExports?: string;
   // Paste pack args
   pastePack: boolean;
-  pasteAllowCode: boolean;
+  pasteAllowCode: boolean; // deprecated, use allowCode
   pasteInclude?: string[];
   pasteExclude?: string[];
   pasteMaxFiles: number;
@@ -137,6 +139,8 @@ function parseArgs(): CLIArgs {
     hashFiles: !getFlag('no-hash-files'),
     maxHashFileSizeMB: getNumber('max-hash-file-size', 10),
     concurrency: getNumber('concurrency', 3),
+    // Unified code body control
+    allowCode: getFlag('no-code') ? false : (getFlag('code') || getFlag('paste-allow-code') || getFlag('scope-allow-code')),
     // Scoped pack flags
     scope: getValue('scope', '').trim() || undefined,
     scopeAllowCode: getFlag('scope-allow-code') || (!getFlag('no-code') && !!getValue('scope', '').trim()),
@@ -175,6 +179,25 @@ function parseArgs(): CLIArgs {
     process.exit(EXIT_CODES.INVALID_ARGS);
   }
 
+  // Deprecation warnings for old flags
+  if (getFlag('paste-allow-code')) {
+    console.warn('⚠️  --paste-allow-code is deprecated. Use --paste --code instead.');
+  }
+  if (getFlag('scope-allow-code')) {
+    console.warn('⚠️  --scope-allow-code is deprecated. Use --scope <symbol> --code instead.');
+  }
+
+  // Validation: warn if --code is used without a mode that supports it
+  if (result.allowCode && !result.pastePack && !result.scope) {
+    console.warn('⚠️  --code has no effect in regular context pack mode (only works with --paste or --scope)');
+  }
+
+  // For backward compatibility, update legacy fields based on unified allowCode
+  if (result.allowCode) {
+    result.scopeAllowCode = true;
+    result.pasteAllowCode = true;
+  }
+
   return result;
 }
 
@@ -190,6 +213,8 @@ USAGE:
 COMMON OPTIONS:
   --out <dir>               Output directory (default: ./.contextpack)
   --level <level>           Detail level: summary|contracts|full-api|deep (default: contracts)
+  --code                    Include full code bodies (for --paste and --scope modes)
+  --no-code                 Exclude code bodies (explicit override)
   --verbose                 Verbose output
   -h, --help                Show this help
   --help-all                Show all advanced options
@@ -199,22 +224,21 @@ SCOPED PACK:
   --scope <fqn>             Symbol to analyze (path#symbol or path#line:col)
   --scope-budget <tokens>   Token budget (default: 20000)
   --scope-plan-only         Generate scope and graph only (for budget planning)
-  --no-code                 Exclude code bodies (include by default)
 
 PASTE PACK:
-  --paste                   Alias for --paste-pack
-  --paste-pack              Generate single-file directory dump (outputs to stdout)
+  --paste                   Generate single-file directory dump (outputs to stdout)
   --paste-max-files <num>   Maximum files to include (default: 100)
   --paste-max-loc <num>     Maximum lines of code (default: 50000)
-  --paste-allow-code        Include full code bodies
   --ex <patterns>           Exclude directories/files (comma-separated)
   --only <patterns>         Include only matching patterns (comma-separated)
 
 EXAMPLES:
   context-pack                                    # Current directory
   context-pack /path/to/project                   # Specific directory
-  context-pack . --scope src/api.ts#handleUser   # Function context
+  context-pack . --scope src/api.ts#handleUser   # Function context (signatures only)
+  context-pack . --scope src/api.ts#handleUser --code  # Function context with code
   context-pack . --paste > output.txt            # Directory dump to file
+  context-pack . --paste --code > full-code.txt  # Directory dump with code bodies
   context-pack . --paste --ex node_modules,dist > clean.txt  # Exclude directories
   context-pack . --paste --only "*.json" > packagejsonlist.txt  # JSON files only
 
@@ -243,7 +267,7 @@ GENERATION OPTIONS:
   --concurrency <num>       Max concurrent collectors (default: 3)
 
 SCOPED PACK (ADVANCED):
-  --scope-allow-code        Explicit code bodies flag (enabled by default)
+  --scope-allow-code        Explicit code bodies flag (deprecated, use --code)
   --scope-mode <mode>       Analysis mode: static|hybrid (default: static)
   --scope-include <list>    Include tests,docs (comma-separated)
   --scope-include-non-exported  Include non-exported symbols (default: false)
@@ -256,6 +280,7 @@ REFACTOR REPORT:
   --refactor-exports <path> Path to exports.json (optional)
 
 PASTE PACK (ADVANCED):
+  --paste-allow-code        Include code bodies (deprecated, use --code)
   --paste-include <globs>   Include patterns (comma-separated)
   --paste-exclude <globs>   Exclude patterns (comma-separated)
   --ex <patterns>           Exclude directories/files (alias for exclude)
@@ -328,7 +353,7 @@ async function main() {
           budgetTokens: config.scopeBudget,
           budgetBytes: config.budgetBytes,
           mode: config.scopeMode,
-          allowCodeBodies: config.scopeAllowCode,
+          allowCodeBodies: config.allowCode,
           include: {
             tests: config.scopeInclude?.includes('tests'),
             docs: config.scopeInclude?.includes('docs')
@@ -409,7 +434,7 @@ async function handleScopedPack(config: CLIArgs) {
         budgetBytes: config.budgetBytes,
         budgetFiles: 50,
         budgetLoc: 10000,
-        allowCodeBodies: config.scopeAllowCode,
+        allowCodeBodies: config.allowCode,
         redactSecrets: true,
       },
     };
@@ -491,7 +516,7 @@ async function handlePastePack(config: CLIArgs) {
     const pasteConfig = {
       rootPath: config.path,
       outputPath: config.out,
-      allowCodeBodies: config.pasteAllowCode,
+      allowCodeBodies: config.allowCode,
       format: 'paste' as const,
       budgets: {
         maxFiles: config.pasteMaxFiles,
