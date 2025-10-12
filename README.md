@@ -1,23 +1,19 @@
 # Context-Pack Suite
 
-**Production-Ready** unified codebase analysis and context extraction for LLM agents. Four coordinated features provide comprehensive understanding from metadata-only analysis to symbol-level code extraction.
+** Basic codebase analysis and contract extract meant for use with LLM agents. TS only at the moment.
 
-## Four Integrated Features
+- **Context Packs**: Metadata-only codebase analysis (safe for sharing)
+- **Scoped Packs**: Symbol-level code extraction with dependency graphs
+- **Refactor Reports**: Architectural analysis and improvement suggestions
+- **Paste Packs**: Single-file code consolidation for sharing
 
-- 🏗️ **Context Packs**: Metadata-only codebase analysis (safe for sharing)
-- 🎯 **Scoped Packs**: Symbol-level code extraction with dependency graphs
-- 📊 **Refactor Reports**: Architectural analysis and improvement suggestions
-- 📋 **Paste Packs**: Single-file code consolidation for sharing
+## Principles
 
-## Key Principles
-
-- **Safe by design**: No source code bodies by default, explicit opt-in for code, automatic secret redaction
-- **Rich analysis**: Import graphs, TypeScript exports, architectural metrics, dependency ranking
-- **Deterministic output**: Same inputs → identical outputs across runs and platforms
-- **High performance**: Shared TypeScript program analysis with concurrent processing
-- **Smart file handling**: Peek-based binary detection, budget enforcement, full .gitignore support
-- **Schema validated**: All artifacts validated against zod schemas with detailed error reporting
-- **Agent optimized**: LLM-friendly formats with stable separators and clear boundaries
+- No code bodies by default (explicit opt-in to output code), secret redaction should be automatic
+- import graphs, TS exports, architectural metrics, dependency rankings
+- peek-based binary detection, budget enforcement, .gitignore support
+- artifacts validated against zod schemas
+- llm-friend output (stable separators, clear boundaries)
 
 ## Quick Start
 
@@ -232,28 +228,6 @@ pnpm install
 pnpm build
 pnpm dev     # Watch mode
 ```
-
-## Production Status
-
-✅ **Complete & Production-Ready**:
-- **Core Engine**: File walking, budget management, canonical JSON output, bounded concurrency
-- **Detector System**: Ecosystem detection (pnpm, npm, TypeScript)
-- **Collectors**: Files manifest, topology, import graph, exports, type metrics, duplication, schema index, TSConfig
-- **CLI Interface**: Simplified argument parsing, optimized for performance and maintainability
-- **File Processing**: Peek-based binary detection, optional hashing, .gitignore support, SVG text handling
-- **Performance**: Concurrent collectors (default: 3), configurable memory limits and timeouts
-- **Validation**: Comprehensive zod schema validation with inline failure reporting
-- **Error Handling**: Structured error system with exit codes and recovery
-- **Security**: Path validation, traversal protection, no code body exposure, hash size limits
-
-🔧 **Recent Changes**:
-- Removed `commander.js` dependency for simpler CLI parsing
-- Added bounded concurrency (3x faster on multi-collector workloads)
-- Added .gitignore support using the `ignore` package
-- Optimized file reading with peek-based binary detection
-- Added configurable hashing controls (`--no-hash-files`, `--max-hash-file-size`)
-
-⏳ **Future**: Language support for Python, Rust, Go
 
 ## Architecture
 
