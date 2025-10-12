@@ -1,1 +1,0 @@
-{"configs":[{"configFile":"tsconfig.json","delta":{"module":"ESNext","moduleResolution":"Bundler","strict":true,"target":"ES2022"},"dir":".","name":"root","resolved":{"compilerOptions":{"module":99,"moduleResolution":100,"strict":true,"target":9}}}]}

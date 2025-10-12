@@ -1,1 +1,0 @@
-{"lockfile":{"present":true,"type":"pnpm"},"packages":[{"bin":{"context-pack":"dist/cli.js"},"dependencies":{"external":["@types/js-yaml","@types/node","@types/picomatch","ignore","js-yaml","picomatch","typescript","vitest","zod"],"internal":[]},"dir":".","name":"context-pack","private":false,"type":"module"}],"workspaces":[{"packages":["context-pack"],"root":"."}]}
