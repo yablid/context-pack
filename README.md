@@ -1,3 +1,6 @@
+
+# Built with Claude Code. This is a (working) example of some ideas on maximizing signal for agentic coding with claude. Use as is. Suggestions welcome.
+
 # Context-Pack Suite
 
 ** Basic codebase analysis and contract extract meant for use with LLM agents. TS only at the moment.
